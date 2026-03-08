@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_typography.dart';
+import '../theme/tokens.dart';
+
 class AppTextField extends StatelessWidget {
   final String label;
   final String? hint;
@@ -26,10 +29,15 @@ class AppTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+
+    final tokens = Theme.of(context).extension<AppTokens>()!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.labelSmall),
+        Text(label,
+          style: AppTypography.caption.copyWith(
+            color: tokens.muted,
+          ),),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,

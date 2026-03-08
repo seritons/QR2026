@@ -52,14 +52,20 @@ class _CreateProfileViewState extends State<CreateProfileView> {
   @override
   Widget build(BuildContext context) {
     final s = vm.state;
+    final tokens = Theme.of(context).extension<AppTokens>()!;
 
     return Theme(
       data: AppetiteTheme.light(),
       child: Scaffold(
         body: Stack(
           children: [
-            Container(decoration: AppetiteTheme.background()),
-            Container(decoration: AppetiteTheme.background2()),
+            Container(
+              decoration: AppetiteTheme.background(context),
+            ),
+
+            Container(
+              decoration: AppetiteTheme.background2(context),
+            ),
             SafeArea(
               child: Center(
                 child: SingleChildScrollView(
@@ -81,7 +87,7 @@ class _CreateProfileViewState extends State<CreateProfileView> {
                           'Bu hesap MVP’de otomatik olarak owner olarak devam eder.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: AppTokens.muted,
+                            color: tokens.muted,
                             fontSize: 13,
                             height: 1.4,
                           ),
@@ -94,22 +100,22 @@ class _CreateProfileViewState extends State<CreateProfileView> {
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: AppTokens.danger.withValues(alpha: 0.08),
+                              color: tokens.danger.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: AppTokens.danger.withValues(alpha: 0.25),
+                                color: tokens.danger.withValues(alpha: 0.25),
                               ),
                             ),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.error_outline, color: AppTokens.danger),
+                                Icon(Icons.error_outline, color: tokens.danger),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     s.error!,
                                     style: TextStyle(
-                                      color: AppTokens.text,
+                                      color: tokens.text,
                                       fontWeight: FontWeight.w700,
                                       height: 1.3,
                                     ),
@@ -133,7 +139,7 @@ class _CreateProfileViewState extends State<CreateProfileView> {
                               Text(
                                 'Bu bilgiler işletme sahibinin profilini oluşturur.',
                                 style: TextStyle(
-                                  color: AppTokens.muted,
+                                  color: tokens.muted,
                                   fontSize: 13,
                                   height: 1.4,
                                 ),
@@ -176,7 +182,7 @@ class _CreateProfileViewState extends State<CreateProfileView> {
                         Text(
                           '© İz • Panel',
                           style: TextStyle(
-                            color: AppTokens.muted.withValues(alpha: 0.85),
+                            color: tokens.muted.withValues(alpha: 0.85),
                             fontSize: 12,
                           ),
                         ),
@@ -219,22 +225,23 @@ class GradientButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final disabled = onPressed == null;
+    final tokens = Theme.of(context).extension<AppTokens>()!;
 
     return Opacity(
       opacity: disabled ? 0.55 : 1.0,
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(AppTokens.rMd),
+        borderRadius: BorderRadius.circular(tokens.rMd),
         child: InkWell(
-          borderRadius: BorderRadius.circular(AppTokens.rMd),
+          borderRadius: BorderRadius.circular(tokens.rMd),
           onTap: onPressed,
           child: Ink(
             height: 48,
             width: double.infinity,
             decoration: BoxDecoration(
-              gradient: AppTokens.appetiteGradient(),
-              borderRadius: BorderRadius.circular(AppTokens.rMd),
-              boxShadow: AppTokens.shadow2,
+              gradient: tokens.appetiteGradient(),
+              borderRadius: BorderRadius.circular(tokens.rMd),
+              boxShadow: tokens.shadow2,
             ),
             child: Center(
               child: isLoading

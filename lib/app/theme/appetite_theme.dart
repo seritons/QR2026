@@ -3,68 +3,98 @@ import 'tokens.dart';
 
 class AppetiteTheme {
   static ThemeData light() {
-    final base = ThemeData(
+    const t = AppTokens.light;
+
+    return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: AppTokens.primary,
-        brightness: Brightness.light,
-      ).copyWith(
-        primary: AppTokens.primary,
-        secondary: AppTokens.primary2,
-        surface: AppTokens.surface,
-        error: AppTokens.danger,
+      scaffoldBackgroundColor: t.bg,
+      colorScheme: ColorScheme.light(
+        primary: t.primary,
+        secondary: t.primary2,
+        surface: t.surface,
+        error: t.danger,
       ),
-      scaffoldBackgroundColor: AppTokens.bg,
+      extensions: const [AppTokens.light],
       textTheme: const TextTheme(),
-    );
-
-    return base.copyWith(
-      textTheme: base.textTheme.apply(
-        bodyColor: AppTokens.text,
-        displayColor: AppTokens.text,
+      cardTheme: CardThemeData(
+        color: t.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(t.rLg),
+          side: BorderSide(color: t.border),
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppTokens.surface,
-        hintStyle: TextStyle(color: AppTokens.muted.withOpacity(0.75)),
-        labelStyle: const TextStyle(color: AppTokens.muted),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        fillColor: t.surface,
+        hintStyle: TextStyle(color: t.muted),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppTokens.rMd),
-          borderSide: BorderSide(color: const Color(0xFF1F2937).withOpacity(0.14)),
+          borderRadius: BorderRadius.circular(t.rMd),
+          borderSide: BorderSide(color: t.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppTokens.rMd),
-          borderSide: BorderSide(color: AppTokens.primary.withOpacity(0.55), width: 1.2),
+          borderRadius: BorderRadius.circular(t.rMd),
+          borderSide: BorderSide(color: t.focusRing, width: 1.3),
         ),
       ),
     );
   }
 
-  // CSS arka planındaki iki radial gradient hissini Flutter’da taklit ediyoruz.
-  static BoxDecoration background() {
+  static ThemeData dark() {
+    const t = AppTokens.dark;
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: t.bg,
+      colorScheme: ColorScheme.dark(
+        primary: t.primary,
+        secondary: t.primary2,
+        surface: t.surface,
+        error: t.danger,
+      ),
+      extensions: const [AppTokens.dark],
+      textTheme: const TextTheme(),
+      cardTheme: CardThemeData(
+        color: t.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(t.rLg),
+          side: BorderSide(color: t.border),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: t.surface,
+        hintStyle: TextStyle(color: t.muted),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(t.rMd),
+          borderSide: BorderSide(color: t.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(t.rMd),
+          borderSide: BorderSide(color: t.focusRing, width: 1.3),
+        ),
+      ),
+    );
+  }
+
+  static BoxDecoration background(BuildContext context) {
+    final t = Theme.of(context).extension<AppTokens>()!;
     return BoxDecoration(
-      color: AppTokens.bg,
+      color: t.bg,
+    );
+  }
+
+  static BoxDecoration background2(BuildContext context) {
+    final t = Theme.of(context).extension<AppTokens>()!;
+    return BoxDecoration(
       gradient: RadialGradient(
         center: const Alignment(-0.8, -0.9),
         radius: 1.2,
         colors: [
-          AppTokens.primary.withOpacity(0.16),
-          Colors.transparent,
-        ],
-        stops: const [0.0, 0.55],
-      ),
-    );
-  }
-
-  static BoxDecoration background2() {
-    return BoxDecoration(
-      gradient: RadialGradient(
-        center: const Alignment(0.9, -0.8),
-        radius: 1.15,
-        colors: [
-          AppTokens.primary2.withOpacity(0.12),
+          t.primarySoft,
           Colors.transparent,
         ],
         stops: const [0.0, 0.55],

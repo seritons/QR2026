@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../app/theme/app_typography.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../app/widgets/app_card.dart';
 
@@ -7,6 +8,8 @@ class PanelDashboardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<AppTokens>()!;
+
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
@@ -15,24 +18,36 @@ class PanelDashboardView extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ÜST BAR ARTIK SHELL'DE (AppBar + Drawer + Logout)
-              // burada sadece içerik kalıyor
 
               AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+
+                    Container(height: 40, color: tokens.bg),
+
+                    Text(
                       'Hoş geldin 👋',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                      style: AppTypography.title.copyWith(
+                        color: tokens.text,
+                      ),
                     ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      'Brightness: ${Theme.of(context).brightness}',
+                      style: AppTypography.caption.copyWith(
+                        color: tokens.muted,
+                      ),
+                    ),
+
                     const SizedBox(height: 6),
+
                     Text(
                       'Burası şu an MVP dashboard. Sonraki adım: günlük ciro, popüler ürün, saatlik yoğunluk.',
-                      style: TextStyle(
-                        color: AppTokens.muted,
-                        fontSize: 13,
-                        height: 1.4,
+                      style: AppTypography.body.copyWith(
+                        color: tokens.muted,
                       ),
                     ),
                   ],
@@ -48,22 +63,50 @@ class PanelDashboardView extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Günlük Ciro', style: TextStyle(fontWeight: FontWeight.w900)),
+
+                          Text(
+                            'Günlük Ciro',
+                            style: AppTypography.bodyStrong.copyWith(
+                              color: tokens.text,
+                            ),
+                          ),
+
                           const SizedBox(height: 6),
-                          Text('₺0', style: TextStyle(color: AppTokens.muted)),
+
+                          Text(
+                            '₺0',
+                            style: AppTypography.metric.copyWith(
+                              color: tokens.text,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                   ),
+
                   const SizedBox(width: 10),
+
                   Expanded(
                     child: AppCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Müşteri', style: TextStyle(fontWeight: FontWeight.w900)),
+
+                          Text(
+                            'Müşteri',
+                            style: AppTypography.bodyStrong.copyWith(
+                              color: tokens.text,
+                            ),
+                          ),
+
                           const SizedBox(height: 6),
-                          Text('0', style: TextStyle(color: AppTokens.muted)),
+
+                          Text(
+                            '0',
+                            style: AppTypography.metric.copyWith(
+                              color: tokens.text,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -77,11 +120,21 @@ class PanelDashboardView extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Son İşlemler', style: TextStyle(fontWeight: FontWeight.w900)),
+
+                    Text(
+                      'Son İşlemler',
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: tokens.text,
+                      ),
+                    ),
+
                     const SizedBox(height: 8),
+
                     Text(
                       'Henüz veri yok.',
-                      style: TextStyle(color: AppTokens.muted, fontSize: 13),
+                      style: AppTypography.body.copyWith(
+                        color: tokens.muted,
+                      ),
                     ),
                   ],
                 ),

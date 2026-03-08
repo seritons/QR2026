@@ -44,13 +44,20 @@ class _BusinessOnboardingViewState extends State<BusinessOnboardingView> {
 
   @override
   Widget build(BuildContext context) {
+
+    final tokens = Theme.of(context).extension<AppTokens>()!;
     return Theme(
       data: AppetiteTheme.light(),
       child: Scaffold(
         body: Stack(
           children: [
-            Container(decoration: AppetiteTheme.background()),
-            Container(decoration: AppetiteTheme.background2()),
+            Container(
+              decoration: AppetiteTheme.background(context),
+            ),
+
+            Container(
+              decoration: AppetiteTheme.background2(context),
+            ),
             SafeArea(
               child: Center(
                 child: SingleChildScrollView(
@@ -72,7 +79,7 @@ class _BusinessOnboardingViewState extends State<BusinessOnboardingView> {
                                 ? 'Ad, adres ve işletme türünü seç.'
                                 : 'Neler var? (menü + özellikler)',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: AppTokens.muted, fontSize: 13, height: 1.35),
+                            style: TextStyle(color: tokens.muted, fontSize: 13, height: 1.35),
                           ),
                           const SizedBox(height: 14),
 
@@ -81,9 +88,9 @@ class _BusinessOnboardingViewState extends State<BusinessOnboardingView> {
                               width: double.infinity,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: AppTokens.danger.withValues(alpha: 0.08),
+                                color: tokens.danger.withValues(alpha: 0.08),
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: AppTokens.danger.withValues(alpha: 0.25)),
+                                border: Border.all(color: tokens.danger.withValues(alpha: 0.25)),
                               ),
                               child: Text(vm.state.error!, style: const TextStyle(fontWeight: FontWeight.w700)),
                             ),
@@ -105,7 +112,7 @@ class _BusinessOnboardingViewState extends State<BusinessOnboardingView> {
                                   child: OutlinedButton(
                                     onPressed: vm.state.isLoading ? null : vm.backStep,
                                     style: OutlinedButton.styleFrom(
-                                      side: BorderSide(color: AppTokens.border),
+                                      side: BorderSide(color: tokens.border),
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                                       padding: const EdgeInsets.symmetric(vertical: 14),
                                     ),
@@ -165,6 +172,8 @@ class _Step1Core extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+
+    final tokens = Theme.of(context).extension<AppTokens>()!;
     return Form(
       key: formKey,
       child: Column(
@@ -212,6 +221,8 @@ class _Step2Details extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+
+    final tokens = Theme.of(context).extension<AppTokens>()!;
     return Column(
       children: [
         _SectionTitle('Menü / Neler var?'),
@@ -242,7 +253,7 @@ class _Step2Details extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppTokens.border),
+              border: Border.all(color: tokens.border),
             ),
             child: Row(
               children: [
@@ -253,7 +264,7 @@ class _Step2Details extends StatelessWidget {
                     vm.features[f] = nv;
                     vm.notifyListeners();
                   },
-                  activeColor: AppTokens.primary,
+                  activeColor: tokens.primary,
                 ),
               ],
             ),
@@ -295,6 +306,7 @@ class _ChipGrid<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<AppTokens>()!;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -307,16 +319,16 @@ class _ChipGrid<T> extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppTokens.border),
+              border: Border.all(color: tokens.border),
               color: selected
-                  ? AppTokens.primary.withValues(alpha: 0.14)
+                  ? tokens.primary.withValues(alpha: 0.14)
                   : Colors.white,
             ),
             child: Text(
               labelOf(it),
               style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: selected ? AppTokens.text : AppTokens.text,
+                color: selected ? tokens.text : tokens.text,
                 fontSize: 12.5,
               ),
             ),

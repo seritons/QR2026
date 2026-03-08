@@ -1,31 +1,266 @@
-// lib/features/panel/menu/menu_models.dart
-//
-// Menü Editörü Modelleri (MVP)
-//
-// Amaçlar:
-// - İşletme menü oluşturabilir (Menu -> Category -> Product)
-// - İçerikler (ingredient) her seferinde yeniden üretilmez:
-//   - İşletmeye özel "Ingredient Library" (IngredientLibraryItem)
-//   - Ürün, içerikleri referansla tutar: ProductIngredientRef (ingredientId + amount + opsiyonel unit override)
-// - Ürünlerde "Ekstra" mekaniği:
-//   - Ekstra aslında başka bir üründür (örn: "Patates Kızartması", "Ekstra Shot", "Sos")
-//   - Ürün -> Ekstra ilişkisi ProductExtraRef ile tutulur (sadece id + maxQty + sort)
-//   - Sunucu tarafında bu ilişkiyi ara tabloyla tutarız: product_extras (product_id -> extra_product_id)
-//
-// Notlar:
-// - businessId sadece Menu seviyesinde kalsın (payload şişmesin).
-// - imagePath UI-only (lokal dosya yolu), sunucuya serialize edilmez.
-// - Price MVP'de double. (İleride: int priceCents daha doğru olur.)
-//
-// Önemli:
-// - Bu dosya sadece MODEL. Legacy dönüşümler / id resolve işleri ViewModel/Service katmanında yapılmalı.
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
-// ==========================================================
-// INGREDIENT (İçerik) Modelleri
-// ==========================================================
+import 'dart:convert';
 
+// ------------------------------------------------------------
+// OPTION SELECT TYPE
+// ------------------------------------------------------------
+enum OptionSelectType { single, multi }
+
+extension OptionSelectTypeX on OptionSelectType {
+  String get label {
+    switch (this) {
+      case OptionSelectType.single:
+        return 'Tek seçim';
+      case OptionSelectType.multi:
+        return 'Çoklu seçim';
+    }
+  }
+}
+
+// ------------------------------------------------------------
+// PRODUCT OPTION ITEM
+// ------------------------------------------------------------
+class ProductOptionItem {
+  final String id;
+  final String name;
+  final double priceDelta; // + fiyat farkı, 0 = ücretsiz
+
+  const ProductOptionItem({
+    required this.id,
+    required this.name,
+    required this.priceDelta,
+  });
+
+  ProductOptionItem copyWith({
+    String? id,
+    String? name,
+    double? priceDelta,
+  }) {
+    return ProductOptionItem(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      priceDelta: priceDelta ?? this.priceDelta,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'priceDelta': priceDelta,
+  };
+
+  factory ProductOptionItem.fromJson(Map<String, dynamic> json) {
+    return ProductOptionItem(
+      id: json['id'] as String,
+      name: (json['name'] ?? '') as String,
+      priceDelta: (json['priceDelta'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
+// ------------------------------------------------------------
+// PRODUCT OPTION GROUP
+// ------------------------------------------------------------
+class ProductOptionGroup {
+  final String id;
+  final String title;
+
+  /// seçim kuralı
+  final OptionSelectType selectType;
+
+  /// seçilebilir adet kuralları
+  final int minSelect; // 0 veya 1 çoğu senaryo
+  final int maxSelect; // single ise genelde 1
+
+  final List<ProductOptionItem> options;
+
+  const ProductOptionGroup({
+    required this.id,
+    required this.title,
+    required this.selectType,
+    required this.minSelect,
+    required this.maxSelect,
+    required this.options,
+  });
+
+  ProductOptionGroup copyWith({
+    String? id,
+    String? title,
+    OptionSelectType? selectType,
+    int? minSelect,
+    int? maxSelect,
+    List<ProductOptionItem>? options,
+  }) {
+    return ProductOptionGroup(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      selectType: selectType ?? this.selectType,
+      minSelect: minSelect ?? this.minSelect,
+      maxSelect: maxSelect ?? this.maxSelect,
+      options: options ?? this.options,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'selectType': selectType.name,
+    'minSelect': minSelect,
+    'maxSelect': maxSelect,
+    'options': options.map((e) => e.toJson()).toList(),
+  };
+
+  factory ProductOptionGroup.fromJson(Map<String, dynamic> json) {
+    final selectTypeStr = (json['selectType'] ?? 'single') as String;
+    final type = OptionSelectType.values.firstWhere(
+          (e) => e.name == selectTypeStr,
+      orElse: () => OptionSelectType.single,
+    );
+
+    return ProductOptionGroup(
+      id: json['id'] as String,
+      title: (json['title'] ?? '') as String,
+      selectType: type,
+      minSelect: (json['minSelect'] as num?)?.toInt() ?? 0,
+      maxSelect: (json['maxSelect'] as num?)?.toInt() ?? 1,
+      options: (json['options'] as List<dynamic>? ?? [])
+          .map((e) => ProductOptionItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+// ------------------------------------------------------------
+// PRODUCT INGREDIENT REF (unitOverride nullable olmalı)
+// Çünkü UI’da "ref.unitOverride ?? it.unit" yapıyorsun.
+// ------------------------------------------------------------
+class ProductIngredientRef {
+  final String ingredientId;
+  final double amount;
+
+  /// null ise ingredientLibraryItem.unit kullanılır
+  final IngredientUnit? unitOverride;
+
+  const ProductIngredientRef({
+    required this.ingredientId,
+    required this.amount,
+    this.unitOverride,
+  });
+
+  ProductIngredientRef copyWith({
+    String? ingredientId,
+    double? amount,
+    IngredientUnit? unitOverride,
+    bool setUnitOverride = false,
+  }) {
+    return ProductIngredientRef(
+      ingredientId: ingredientId ?? this.ingredientId,
+      amount: amount ?? this.amount,
+      unitOverride: setUnitOverride ? unitOverride : (unitOverride ?? this.unitOverride),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'ingredientId': ingredientId,
+    'amount': amount,
+    'unitOverride': unitOverride?.name,
+  };
+
+  factory ProductIngredientRef.fromJson(Map<String, dynamic> json) {
+    final u = json['unitOverride'];
+    IngredientUnit? unit;
+    if (u is String && u.isNotEmpty) {
+      unit = IngredientUnit.values.firstWhere(
+            (e) => e.name == u,
+        orElse: () => IngredientUnit.adet,
+      );
+    }
+
+    return ProductIngredientRef(
+      ingredientId: json['ingredientId'] as String,
+      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      unitOverride: unit,
+    );
+  }
+}
+
+// ------------------------------------------------------------
+// PRODUCT MODEL (optionGroups eklendi + JSON)
+// ------------------------------------------------------------
+class ProductModel {
+  final String id;
+  final String name;
+  final String description;
+  final String? imageUrl; // ➕ Yeni alan
+  final double price;
+  final List<ProductIngredientRef> ingredients;
+  final List<ProductOptionGroup> optionGroups;
+
+  const ProductModel({
+    required this.id,
+    required this.name,
+    required this.description,
+    this.imageUrl, // ➕ Gerekli kılındı
+    required this.price,
+    required this.ingredients,
+    this.optionGroups = const [],
+  });
+
+  ProductModel copyWith({
+    String? id,
+    String? name,
+    String? description,
+    String? imageUrl,
+    double? price,
+    List<ProductIngredientRef>? ingredients,
+    List<ProductOptionGroup>? optionGroups,
+  }) {
+    return ProductModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      imageUrl: imageUrl ?? this.imageUrl,
+      price: price ?? this.price,
+      ingredients: ingredients ?? this.ingredients,
+      optionGroups: optionGroups ?? this.optionGroups,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'imageUrl': imageUrl,
+    'price': price,
+    'ingredients': ingredients.map((e) => e.toJson()).toList(),
+    'optionGroups': optionGroups.map((e) => e.toJson()).toList(),
+  };
+
+  factory ProductModel.fromJson(Map<String, dynamic> json) {
+    return ProductModel(
+      id: json['id'] as String,
+      name: (json['name'] ?? '') as String,
+      description: (json['description'] ?? '') as String,
+      imageUrl: (json['imageUrl'] ?? '') as String, // ➕ Mapping
+      price: (json['price'] as num?)?.toDouble() ?? 0,
+      ingredients: (json['ingredients'] as List<dynamic>? ?? [])
+          .map((e) => ProductIngredientRef.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      optionGroups: (json['optionGroups'] as List<dynamic>? ?? [])
+          .map((e) => ProductOptionGroup.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  String toRawJson() => jsonEncode(toJson());
+  factory ProductModel.fromRawJson(String s) =>
+      ProductModel.fromJson(jsonDecode(s) as Map<String, dynamic>);
+}
+// --------------------------
+// Ingredient modellerin aynen kalsın
+// --------------------------
 enum IngredientUnit { gr, ml, adet }
 
 extension IngredientUnitLabel on IngredientUnit {
@@ -41,26 +276,11 @@ extension IngredientUnitLabel on IngredientUnit {
   }
 }
 
-IngredientUnit ingredientUnitFromString(String s) {
-  switch (s) {
-    case 'gr':
-      return IngredientUnit.gr;
-    case 'ml':
-      return IngredientUnit.ml;
-    case 'adet':
-      return IngredientUnit.adet;
-    default:
-      return IngredientUnit.gr;
-  }
-}
-
-/// İşletmeye özel içerik kütüphanesi öğesi.
-/// Örn: "Yumurta" (adet), "Süt" (ml), "Un" (gr)
 class IngredientLibraryItem {
-  final String id; // uuid, business-scoped
-  final String name; // "Yumurta"
-  final IngredientUnit unit; // default unit (adet/gr/ml)
-  final String? note; // opsiyonel: "L boy"
+  final String id; // uuid/tmp
+  final String name;
+  final IngredientUnit unit;
+  final String? note;
 
   const IngredientLibraryItem({
     required this.id,
@@ -103,76 +323,74 @@ class IngredientLibraryItem {
     );
   }
 }
+// ==========================================================
+// ✅ MÜŞTERİ SEÇİMLERİ (Product Options)
+// ==========================================================
 
-/// Ürün içindeki içerik referansı:
-/// - ingredientId: IngredientLibraryItem.id
-/// - amount: miktar
-/// - unitOverride: bu ürün kullanımında unit farklı olsun istersek (opsiyonel)
-class ProductIngredientRef {
-  final String ingredientId; // IngredientLibraryItem.id
-  final double amount; // how much
+enum ProductOptionGroupType { single, multi }
 
-  /// Opsiyonel: Bu üründe farklı bir birimle kullan (persist edilebilir)
-  final IngredientUnit? unitOverride;
+extension ProductOptionGroupTypeLabel on ProductOptionGroupType {
+  String get label => switch (this) {
+    ProductOptionGroupType.single => 'Tek seçim',
+    ProductOptionGroupType.multi => 'Çoklu seçim',
+  };
+}
 
-  /// UI-only cache: kolay erişim için Ingredient objesi (serialize edilmez)
-  final IngredientLibraryItem? ingredient;
+/// Bir cevap: "Az pişmiş", "Ekstra köfte (+30₺)" gibi
+class ProductOptionChoice {
+  final String id; // tmp_...
+  final String label;
+  final double priceDelta; // + ücret (0 ücretsiz)
 
-  const ProductIngredientRef({
-    required this.ingredientId,
-    required this.amount,
-    this.unitOverride,
-    this.ingredient,
+  const ProductOptionChoice({
+    required this.id,
+    required this.label,
+    required this.priceDelta,
   });
 
-  ProductIngredientRef copyWith({
-    String? ingredientId,
-    double? amount,
-    IngredientUnit? unitOverride,
-    bool setUnitOverride = false,
-    IngredientLibraryItem? ingredient,
-    bool setIngredient = false,
+  ProductOptionChoice copyWith({
+    String? id,
+    String? label,
+    double? priceDelta,
   }) {
-    return ProductIngredientRef(
-      ingredientId: ingredientId ?? this.ingredientId,
-      amount: amount ?? this.amount,
-      unitOverride: setUnitOverride ? unitOverride : this.unitOverride,
-      ingredient: setIngredient ? ingredient : this.ingredient,
+    return ProductOptionChoice(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      priceDelta: priceDelta ?? this.priceDelta,
     );
   }
 
-  /// Persist format (ingredient cache yazılmaz)
   Map<String, dynamic> toJson() => {
-    'ingredientId': ingredientId,
-    'amount': amount,
-    if (unitOverride != null) 'unit': unitOverride!.name,
+    'id': id,
+    'label': label,
+    'priceDelta': priceDelta,
   };
 
-  factory ProductIngredientRef.fromJson(Map<String, dynamic> json) {
-    final u = (json['unit'] ?? '').toString().trim();
-    final parsedUnit = u.isEmpty
-        ? null
-        : IngredientUnit.values.firstWhere(
-          (e) => e.name == u,
-      orElse: () => IngredientUnit.gr,
-    );
-
-    return ProductIngredientRef(
-      ingredientId: (json['ingredientId'] ?? '').toString(),
-      amount: (json['amount'] is num) ? (json['amount'] as num).toDouble() : 0.0,
-      unitOverride: parsedUnit,
-      ingredient: null, // UI sonra doldurur
+  factory ProductOptionChoice.fromJson(Map<String, dynamic> json) {
+    return ProductOptionChoice(
+      id: (json['id'] ?? '').toString(),
+      label: (json['label'] ?? '').toString(),
+      priceDelta: (json['priceDelta'] is num) ? (json['priceDelta'] as num).toDouble() : 0.0,
     );
   }
 }
 
 // ==========================================================
-// PRODUCT EXTRAS (Ürün Ekstraları) - YENİ
+// ✅ PRODUCT MODEL (Extras kaldırıldı, options eklendi)
 // ==========================================================
+IngredientUnit ingredientUnitFromString(String s) {
+  switch (s) {
+    case 'gr':
+      return IngredientUnit.gr;
+    case 'ml':
+      return IngredientUnit.ml;
+    case 'adet':
+      return IngredientUnit.adet;
+    default:
+      return IngredientUnit.gr;
+  }
+}
 
-/// Ürüne eklenebilecek ekstra ürün referansı.
-/// Ekstra "ayrı bir ürün" olduğu için sadece extraProductId tutarız.
-/// Sunucuda: product_extras ara tablosu ile tutmak ideal.
 class ProductExtraRef {
   /// Ekstra olarak seçilebilecek ürünün id'si (ProductModel.id)
   final String extraProductId;
@@ -228,98 +446,6 @@ class ProductExtraRef {
 // ==========================================================
 // PRODUCT / CATEGORY / MENU
 // ==========================================================
-
-class ProductModel {
-  final String id;
-  final String name;
-  final String description;
-
-  /// Ürünün içerikleri: business ingredient library referansları
-  final List<ProductIngredientRef> ingredients;
-
-  /// Ürünün ekstraları: başka ürünlere referans
-  final List<ProductExtraRef> extras;
-
-  final double price;
-
-  /// Remote URL (Supabase storage public url vs.)
-  final String? imageUrl;
-
-  /// Local picked file path (UI-only)
-  final String? imagePath;
-
-  const ProductModel({
-    required this.id,
-    required this.name,
-    this.description = '',
-    this.ingredients = const [],
-    this.extras = const [],
-    required this.price,
-    this.imageUrl,
-    this.imagePath,
-  });
-
-  ProductModel copyWith({
-    String? name,
-    String? description,
-    List<ProductIngredientRef>? ingredients,
-    List<ProductExtraRef>? extras,
-    double? price,
-    String? imageUrl,
-    bool setImageUrl = false,
-    String? imagePath,
-    bool setImagePath = false,
-  }) {
-    return ProductModel(
-      id: id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      ingredients: ingredients ?? this.ingredients,
-      extras: extras ?? this.extras,
-      price: price ?? this.price,
-      imageUrl: setImageUrl ? imageUrl : this.imageUrl,
-      imagePath: setImagePath ? imagePath : this.imagePath,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'description': description,
-    'price': price,
-    'image_url': imageUrl,
-    'ingredients': ingredients.map((e) => e.toJson()).toList(),
-    'extras': extras.map((e) => e.toJson()).toList(),
-  };
-
-  factory ProductModel.fromJson(Map<String, dynamic> json) {
-    final rawIngredients = (json['ingredients'] as List?) ?? const [];
-
-    // Not: Legacy ingredients [{name, unit, amount}] dönüşümü MODEL içinde yapılmaz.
-    // Bu dönüşümü ViewModel/Service katmanında, ingredientLibrary ile name->id map ederek yap.
-    final ingredientRefs = rawIngredients
-        .whereType<Map>()
-        .map((e) => ProductIngredientRef.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
-
-    final rawExtras = (json['extras'] as List?) ?? const [];
-    final extraRefs = rawExtras
-        .whereType<Map>()
-        .map((e) => ProductExtraRef.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
-
-    return ProductModel(
-      id: (json['id'] ?? '').toString(),
-      name: (json['name'] ?? '').toString(),
-      description: (json['description'] ?? '').toString(),
-      price: (json['price'] is num) ? (json['price'] as num).toDouble() : 0,
-      imageUrl: (json['image_url'] == null) ? null : json['image_url'].toString(),
-      imagePath: null, // asla server'dan gelmez
-      ingredients: ingredientRefs,
-      extras: extraRefs,
-    );
-  }
-}
 
 class CategoryModel {
   final String id;
@@ -1074,10 +1200,16 @@ class EventDraft {
 // ==========================================================
 // UI Yardımcı Model
 // ==========================================================
-
 class IngredientPickResult {
   final double amount;
   final IngredientUnit unit;
 
   const IngredientPickResult({required this.amount, required this.unit});
 }
+
+enum ChoiceType { single, multi }
+
+extension ChoiceTypeLabel on ChoiceType {
+  String get label => this == ChoiceType.single ? 'Tek seçim' : 'Çoklu seçim';
+}
+

@@ -1,10 +1,9 @@
-
-
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../app/theme/app_typography.dart';
+import '../../../../app/theme/tokens.dart';
 import '../menu_models.dart';
-import '../menu_view.dart';
+import 'ProductEditorSheet.dart';
 
 class IngredientPickDialog extends StatefulWidget {
   final String name;
@@ -32,9 +31,22 @@ class _IngredientPickDialogState extends State<IngredientPickDialog> {
   }
 
   @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<AppTokens>()!;
+
     return AlertDialog(
-      title: Text(widget.name),
+      title: Text(
+        widget.name,
+        style: AppTypography.title.copyWith(
+          color: tokens.text,
+        ),
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -47,27 +59,49 @@ class _IngredientPickDialogState extends State<IngredientPickDialog> {
           TextField(
             controller: _amount,
             keyboardType: TextInputType.number,
+            style: AppTypography.body.copyWith(
+              color: tokens.text,
+            ),
             decoration: InputDecoration(
               labelText: 'Miktar',
+              labelStyle: AppTypography.body.copyWith(
+                color: tokens.muted,
+              ),
               suffixText: _unit.label,
+              suffixStyle: AppTypography.bodyStrong.copyWith(
+                color: tokens.muted,
+              ),
             ),
           ),
         ],
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('İptal')),
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'İptal',
+            style: AppTypography.bodyStrong.copyWith(
+              color: tokens.muted,
+            ),
+          ),
+        ),
         FilledButton(
           onPressed: () {
             final a = double.tryParse(_amount.text.replaceAll(',', '.')) ?? 0;
             if (a <= 0) return;
-            Navigator.pop(context, IngredientPickResult(amount: a, unit: _unit));
+            Navigator.pop(
+              context,
+              IngredientPickResult(amount: a, unit: _unit),
+            );
           },
-          child: const Text('Ekle'),
+          child: Text(
+            'Ekle',
+            style: AppTypography.button.copyWith(
+              color: Colors.white,
+            ),
+          ),
         ),
       ],
     );
   }
 }
-

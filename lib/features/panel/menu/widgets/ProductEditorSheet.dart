@@ -1,28 +1,23 @@
 import 'dart:math' as math;
-
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-
+import 'package:uuid/uuid.dart';
+import '../../../../app/theme/app_typography.dart';
+import '../../../../app/theme/tokens.dart';
 import '../menu_models.dart';
-import '../menu_view.dart';
-import 'IngredientPickDialog.dart';
-import 'IngredientQuickCreateDialog.dart';
+import '../menu_models.dart' as pick_dialog;
+import 'IngredientPickDialog.dart' as pick_dialog;
+import 'IngredientQuickCreateDialog.dart' as quick_dialog;
 
 class ProductEditorSheet extends StatefulWidget {
   final String title;
   final ProductModel initial;
   final List<IngredientLibraryItem> ingredientLibrary;
 
-  /// ✅ Ekstra seçebilmek için: menüdeki tüm ürünler (candidate list)
-  /// Not: initial ürünün kendisini filtreleyeceğiz.
-  final List<ProductModel> allProducts;
-
   const ProductEditorSheet({
     super.key,
     required this.title,
     required this.initial,
     required this.ingredientLibrary,
-    required this.allProducts,
   });
 
   @override
@@ -38,14 +33,9 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
   late final TextEditingController _price;
 
   final TextEditingController _ingSearch = TextEditingController();
+  final Uuid _uuid = const Uuid();
+
   String _q = '';
-
-  // ✅ Extras arama
-  final TextEditingController _extraSearch = TextEditingController();
-  String _eq = '';
-
-  String _tmpId() =>
-      'tmp_${DateTime.now().microsecondsSinceEpoch}_${math.Random().nextInt(9999)}';
 
   @override
   void initState() {
@@ -60,21 +50,20 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
     );
 
     _ingSearch.addListener(() => setState(() => _q = _ingSearch.text.trim()));
-    _extraSearch.addListener(() => setState(() => _eq = _extraSearch.text.trim()));
   }
 
   @override
   void dispose() {
     _ingSearch.dispose();
-    _extraSearch.dispose();
     _name.dispose();
     _desc.dispose();
     _price.dispose();
     super.dispose();
   }
 
-  Map<String, IngredientLibraryItem> get _libById =>
-      {for (final i in _lib) i.id: i};
+  Map<String, IngredientLibraryItem> get _libById => {
+    for (final i in _lib) i.id: i,
+  };
 
   List<IngredientLibraryItem> get _suggestions {
     if (_q.isEmpty) return const [];
@@ -87,21 +76,10 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
     return _lib.any((x) => x.name.toLowerCase() == q);
   }
 
-  // ✅ Extras candidates (kendi ürününü çıkar)
-  List<ProductModel> get _extraCandidates {
-    final selfId = _p.id;
-    final list = widget.allProducts.where((x) => x.id != selfId).toList();
-    if (_eq.trim().isEmpty) return list;
-    final q = _eq.trim().toLowerCase();
-    return list.where((x) => x.name.toLowerCase().contains(q)).toList();
-  }
-
-  Map<String, ProductModel> get _productById =>
-      {for (final p in widget.allProducts) p.id: p};
-
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
+    final tokens = Theme.of(context).extension<AppTokens>()!;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Padding(
@@ -112,7 +90,9 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
         maxChildSize: 0.95,
         builder: (_, controller) => Material(
           color: t.colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(tokens.rLg),
+          ),
           child: ListView(
             controller: controller,
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
@@ -122,143 +102,97 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                   width: 44,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: t.dividerColor,
+                    color: tokens.divider,
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
+
               Row(
                 children: [
                   Expanded(
                     child: Text(
                       widget.title,
-                      style: t.textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                      style: AppTypography.title.copyWith(
+                        color: tokens.text,
+                      ),
                     ),
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Kapat'),
+                    child: Text(
+                      'Kapat',
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: tokens.muted,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  FilledButton(onPressed: _commit, child: const Text('Kaydet')),
+                  FilledButton(
+                    onPressed: _commit,
+                    child: Text(
+                      'Kaydet',
+                      style: AppTypography.button.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ],
               ),
 
               const SizedBox(height: 12),
+
+              // BASIC
               TextField(
                 controller: _name,
-                decoration: const InputDecoration(labelText: 'Ürün adı'),
+                style: AppTypography.body.copyWith(
+                  color: tokens.text,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Ürün adı',
+                  labelStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _desc,
-                decoration: const InputDecoration(
+                style: AppTypography.body.copyWith(
+                  color: tokens.text,
+                ),
+                decoration: InputDecoration(
                   labelText: 'Açıklama (opsiyonel)',
+                  labelStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _price,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
+                style: AppTypography.body.copyWith(
+                  color: tokens.text,
+                ),
+                decoration: InputDecoration(
                   labelText: 'Fiyat',
                   hintText: '0,00',
+                  labelStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
+                  hintStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
                 ),
               ),
 
               const SizedBox(height: 18),
 
-              // ==========================================================
-              // ✅ EXTRAS SECTION (UX: chips + add sheet + max qty quick edit)
-              // ==========================================================
+              // INGREDIENTS
               _sectionHeader(
-                t,
-                title: 'Ekstralar',
-                subtitle: 'Bu ürüne ek olarak alınabilecek ürünler (ör: Patates, Shot).',
-                icon: Icons.extension_outlined,
-                trailing: FilledButton.icon(
-                  onPressed: _openExtrasPicker,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Ekle'),
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              if (_p.extras.isEmpty)
-                _emptyHint(
-                  t,
-                  text: 'Ekstra yok. “Ekle” ile bu ürüne ekstra seçenekler ekleyebilirsin.',
-                )
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _p.extras.map((x) {
-                    final prod = _productById[x.extraProductId];
-                    final name = prod?.name ?? 'Ürün';
-                    final price = prod?.price ?? 0.0;
-                    final maxQty = x.maxQty;
-
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(999),
-                      onTap: () => _editExtraMaxQty(x),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: t.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: t.dividerColor.withValues(alpha: 0.6),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.add_circle_outline, size: 18),
-                            const SizedBox(width: 8),
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name,
-                                  style: t.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${price.toStringAsFixed(2).replaceAll('.', ',')} ₺ • max $maxQty',
-                                  style: t.textTheme.bodySmall?.copyWith(
-                                    color: t.hintColor,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              tooltip: 'Kaldır',
-                              onPressed: () => _removeExtra(x.extraProductId),
-                              icon: Icon(Icons.close, size: 18, color: t.hintColor),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-
-              const SizedBox(height: 18),
-
-              // ==========================================================
-              // INGREDIENTS SECTION
-              // ==========================================================
-              _sectionHeader(
-                t,
+                context,
                 title: 'İçerikler',
                 subtitle: 'Ürünün içeriğini buradan yönet.',
                 icon: Icons.format_list_bulleted,
@@ -267,11 +201,18 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
 
               TextField(
                 controller: _ingSearch,
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search),
+                style: AppTypography.body.copyWith(
+                  color: tokens.text,
+                ),
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
                   hintText: 'Örn: sucuk, yumurta, kaşar',
+                  hintStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
                 ),
               ),
+
               if (_q.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Card(
@@ -281,9 +222,17 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                       ..._suggestions.map(
                             (it) => ListTile(
                           dense: true,
-                          title: Text(it.name),
+                          title: Text(
+                            it.name,
+                            style: AppTypography.bodyStrong.copyWith(
+                              color: tokens.text,
+                            ),
+                          ),
                           subtitle: Text(
                             '${it.unit.label}${(it.note ?? '').trim().isEmpty ? '' : ' · ${it.note}'}',
+                            style: AppTypography.caption.copyWith(
+                              color: tokens.muted,
+                            ),
                           ),
                           onTap: () => _addIngredientFlow(existingItem: it),
                         ),
@@ -292,8 +241,18 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                         ListTile(
                           dense: true,
                           leading: const Icon(Icons.add),
-                          title: Text('"$_q" ekle'),
-                          subtitle: const Text('Birim seçerek oluştur'),
+                          title: Text(
+                            '"$_q" ekle',
+                            style: AppTypography.bodyStrong.copyWith(
+                              color: tokens.text,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Birim seçerek oluştur',
+                            style: AppTypography.caption.copyWith(
+                              color: tokens.muted,
+                            ),
+                          ),
                           onTap: _addNewIngredientFromQuery,
                         ),
                     ],
@@ -304,12 +263,13 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
               const SizedBox(height: 14),
 
               if (_p.ingredients.isEmpty)
-                _emptyHint(t, text: 'Bu üründe içerik yok.')
+                _emptyHint(context, text: 'Bu üründe içerik yok.')
               else
                 ..._p.ingredients.map((ref) {
                   final it = _libById[ref.ingredientId];
                   final name = it?.name ?? 'Bilinmeyen içerik';
-                  final unit = (ref.unitOverride ?? it?.unit ?? IngredientUnit.adet);
+                  final unit =
+                  (ref.unitOverride ?? it?.unit ?? IngredientUnit.adet);
 
                   return Card(
                     elevation: 0,
@@ -326,23 +286,26 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                                   children: [
                                     Text(
                                       name,
-                                      style: t.textTheme.titleSmall?.copyWith(
-                                        fontWeight: FontWeight.w800,
+                                      style: AppTypography.bodyStrong.copyWith(
+                                        color: tokens.text,
                                       ),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
                                       'Birim: ${unit.label}',
-                                      style: t.textTheme.bodySmall
-                                          ?.copyWith(color: t.hintColor),
+                                      style: AppTypography.caption.copyWith(
+                                        color: tokens.muted,
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
                               IconButton(
                                 onPressed: () => _removeRef(ref),
-                                icon: Icon(Icons.delete_outline,
-                                    color: t.colorScheme.error),
+                                icon: Icon(
+                                  Icons.delete_outline,
+                                  color: t.colorScheme.error,
+                                ),
                               ),
                             ],
                           ),
@@ -353,9 +316,7 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                                 child: IngredientUnitOverrideField(
                                   label: 'Birim',
                                   initial: unit,
-                                  onChanged: (v) {
-                                    _setUnitOverride(ref, v);
-                                  },
+                                  onChanged: (v) => _setUnitOverride(ref, v),
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -366,9 +327,19 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                                       .toStringAsFixed(0)
                                       .replaceAll('.', ','),
                                   keyboardType: TextInputType.number,
+                                  style: AppTypography.body.copyWith(
+                                    color: tokens.text,
+                                  ),
                                   decoration: InputDecoration(
                                     labelText: 'Miktar',
+                                    labelStyle: AppTypography.body.copyWith(
+                                      color: tokens.muted,
+                                    ),
                                     suffixText: unit.label,
+                                    suffixStyle: AppTypography.bodyStrong
+                                        .copyWith(
+                                      color: tokens.muted,
+                                    ),
                                   ),
                                   onChanged: (v) {
                                     final n =
@@ -384,6 +355,36 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
                     ),
                   );
                 }),
+
+              const SizedBox(height: 18),
+
+              // CUSTOMER CHOICES
+              _sectionHeader(
+                context,
+                title: 'Müşteri Seçimleri',
+                subtitle:
+                'Pişirme derecesi, içecek boyu, ekstra sos gibi seçenek grupları.',
+                icon: Icons.tune,
+                trailing: FilledButton.icon(
+                  onPressed: _addOptionGroup,
+                  icon: const Icon(Icons.add),
+                  label: Text(
+                    'Grup Ekle',
+                    style: AppTypography.button.copyWith(
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              if (_p.optionGroups.isEmpty)
+                _emptyHint(
+                  context,
+                  text: 'Seçenek grubu yok. “Grup Ekle” ile başlayabilirsin.',
+                )
+              else
+                ..._p.optionGroups.map((g) => _optionGroupCard(context, g)),
             ],
           ),
         ),
@@ -391,79 +392,535 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
     );
   }
 
-  // ==========================================================
-  // UI HELPERS
-  // ==========================================================
+  Widget _optionGroupCard(BuildContext context, ProductOptionGroup g) {
+    final t = Theme.of(context);
+    final tokens = Theme.of(context).extension<AppTokens>()!;
 
-  Widget _sectionHeader(
-      ThemeData t, {
-        required String title,
-        required String subtitle,
-        required IconData icon,
-        Widget? trailing,
-      }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: t.colorScheme.primary.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: t.colorScheme.primary),
+    final rule = '${g.selectType.label} • min ${g.minSelect} / max ${g.maxSelect}';
+    final preview = g.options.isEmpty
+        ? 'Seçenek yok'
+        : g.options.take(3).map((o) {
+      final d = o.priceDelta;
+      if (d == 0) return o.name;
+      final s = d.toStringAsFixed(2).replaceAll('.', ',');
+      return '${o.name} (+$s ₺)';
+    }).join(' · ');
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    g.title,
+                    style: AppTypography.bodyStrong.copyWith(
+                      color: tokens.text,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    rule,
+                    style: AppTypography.caption.copyWith(
+                      color: tokens.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    preview,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.body.copyWith(
+                      color: tokens.text,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Düzenle',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _editOptionGroup(g),
+            ),
+            IconButton(
+              tooltip: 'Sil',
+              icon: Icon(
+                Icons.delete_outline,
+                color: t.colorScheme.error,
+              ),
+              onPressed: () => _removeOptionGroup(g.id),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      ),
+    );
+  }
+
+  Future<void> _addOptionGroup() async {
+    final created = await _openOptionGroupEditor(
+      initial: ProductOptionGroup(
+        id: _uuid.v4(),
+        title: '',
+        selectType: OptionSelectType.single,
+        minSelect: 0,
+        maxSelect: 1,
+        options: const [],
+      ),
+      sheetTitle: 'Seçenek Grubu Ekle',
+    );
+
+    if (created == null) return;
+
+    setState(() {
+      _p = _p.copyWith(optionGroups: [..._p.optionGroups, created]);
+    });
+  }
+
+  Future<void> _editOptionGroup(ProductOptionGroup g) async {
+    final updated = await _openOptionGroupEditor(
+      initial: g,
+      sheetTitle: 'Seçenek Grubu Düzenle',
+    );
+
+    if (updated == null) return;
+
+    setState(() {
+      _p = _p.copyWith(
+        optionGroups: _p.optionGroups
+            .map((x) => x.id == g.id ? updated : x)
+            .toList(),
+      );
+    });
+  }
+
+  void _removeOptionGroup(String groupId) {
+    setState(() {
+      _p = _p.copyWith(
+        optionGroups:
+        _p.optionGroups.where((x) => x.id != groupId).toList(),
+      );
+    });
+  }
+
+  Future<ProductOptionGroup?> _openOptionGroupEditor({
+    required ProductOptionGroup initial,
+    required String sheetTitle,
+  }) async {
+    final titleC = TextEditingController(text: initial.title);
+
+    OptionSelectType type = initial.selectType;
+    int minSel = initial.minSelect;
+    int maxSel = initial.maxSelect;
+    List<ProductOptionItem> options = [...initial.options];
+
+    return showModalBottomSheet<ProductOptionGroup>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final tokens = Theme.of(ctx).extension<AppTokens>()!;
+
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            void clampRules() {
+              if (maxSel < 1) maxSel = 1;
+              if (minSel < 0) minSel = 0;
+              if (minSel > maxSel) minSel = maxSel;
+              if (type == OptionSelectType.single) {
+                if (maxSel > 1) maxSel = 1;
+                if (minSel > 1) minSel = 1;
+              }
+            }
+
+            clampRules();
+
+            String rulesHint() {
+              if (type == OptionSelectType.single) {
+                return 'Tek seçim: max 1 önerilir (min 0 veya 1)';
+              }
+              return 'Çoklu seçim: max >= 1 olmalı';
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 10,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 12,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            sheetTitle,
+                            style: AppTypography.title.copyWith(
+                              color: tokens.text,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text(
+                            'Kapat',
+                            style: AppTypography.bodyStrong.copyWith(
+                              color: tokens.muted,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () {
+                            final title = titleC.text.trim();
+                            if (title.isEmpty) return;
+
+                            clampRules();
+
+                            final fixed = ProductOptionGroup(
+                              id: initial.id,
+                              title: title,
+                              selectType: type,
+                              minSelect: minSel,
+                              maxSelect: maxSel,
+                              options: options,
+                            );
+                            Navigator.pop(ctx, fixed);
+                          },
+                          child: Text(
+                            'Kaydet',
+                            style: AppTypography.button.copyWith(
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: titleC,
+                      style: AppTypography.body.copyWith(
+                        color: tokens.text,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Grup adı',
+                        hintText: 'Örn: Pişirme Derecesi',
+                        labelStyle: AppTypography.body.copyWith(
+                          color: tokens.muted,
+                        ),
+                        hintStyle: AppTypography.body.copyWith(
+                          color: tokens.muted,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<OptionSelectType>(
+                      initialValue: type,
+                      decoration: InputDecoration(
+                        labelText: 'Seçim tipi',
+                        labelStyle: AppTypography.body.copyWith(
+                          color: tokens.muted,
+                        ),
+                      ),
+                      items: OptionSelectType.values
+                          .map(
+                            (v) => DropdownMenuItem(
+                          value: v,
+                          child: Text(
+                            v.label,
+                            style: AppTypography.body.copyWith(
+                              color: tokens.text,
+                            ),
+                          ),
+                        ),
+                      )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setSheet(() {
+                          type = v;
+                          if (type == OptionSelectType.single) {
+                            maxSel = 1;
+                            if (minSel > 1) minSel = 1;
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: minSel.toString(),
+                            keyboardType: TextInputType.number,
+                            style: AppTypography.body.copyWith(
+                              color: tokens.text,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: 'Min seçim',
+                              labelStyle: AppTypography.body.copyWith(
+                                color: tokens.muted,
+                              ),
+                            ),
+                            onChanged: (v) => setSheet(() {
+                              minSel = int.tryParse(v.trim()) ?? minSel;
+                            }),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: maxSel.toString(),
+                            keyboardType: TextInputType.number,
+                            style: AppTypography.body.copyWith(
+                              color: tokens.text,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: 'Max seçim',
+                              labelStyle: AppTypography.body.copyWith(
+                                color: tokens.muted,
+                              ),
+                            ),
+                            onChanged: (v) => setSheet(() {
+                              maxSel = int.tryParse(v.trim()) ?? maxSel;
+                            }),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        rulesHint(),
+                        style: AppTypography.caption.copyWith(
+                          color: tokens.muted,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Seçenekler',
+                            style: AppTypography.bodyStrong.copyWith(
+                              color: tokens.text,
+                            ),
+                          ),
+                        ),
+                        FilledButton.icon(
+                          onPressed: () async {
+                            final created = await _openOptionItemEditor(
+                              title: 'Seçenek Ekle',
+                              initial: ProductOptionItem(
+                                id: _uuid.v4(),
+                                name: '',
+                                priceDelta: 0,
+                              ),
+                            );
+                            if (created == null) return;
+                            setSheet(() => options = [...options, created]);
+                          },
+                          icon: const Icon(Icons.add),
+                          label: Text(
+                            'Ekle',
+                            style: AppTypography.button.copyWith(
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    if (options.isEmpty)
+                      _emptyHint(ctx, text: 'Henüz seçenek yok.')
+                    else
+                      Flexible(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: options.length,
+                          itemBuilder: (_, i) {
+                            final o = options[i];
+                            final d = o.priceDelta;
+                            final priceText = d == 0
+                                ? 'Ücretsiz'
+                                : '+${d.toStringAsFixed(2).replaceAll(".", ",")} ₺';
+
+                            return Card(
+                              elevation: 0,
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                title: Text(
+                                  o.name.isEmpty
+                                      ? 'İsimsiz seçenek'
+                                      : o.name,
+                                  style: AppTypography.bodyStrong.copyWith(
+                                    color: tokens.text,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  priceText,
+                                  style: AppTypography.caption.copyWith(
+                                    color: tokens.muted,
+                                  ),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Düzenle',
+                                      icon: const Icon(Icons.edit_outlined),
+                                      onPressed: () async {
+                                        final updated =
+                                        await _openOptionItemEditor(
+                                          title: 'Seçeneği Düzenle',
+                                          initial: o,
+                                        );
+                                        if (updated == null) return;
+                                        setSheet(() {
+                                          options = options
+                                              .map((x) => x.id == o.id ? updated : x)
+                                              .toList();
+                                        });
+                                      },
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Sil',
+                                      icon: Icon(
+                                        Icons.delete_outline,
+                                        color: Theme.of(ctx).colorScheme.error,
+                                      ),
+                                      onPressed: () {
+                                        setSheet(() {
+                                          options = options
+                                              .where((x) => x.id != o.id)
+                                              .toList();
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<ProductOptionItem?> _openOptionItemEditor({
+    required String title,
+    required ProductOptionItem initial,
+  }) async {
+    final nameC = TextEditingController(text: initial.name);
+    final priceC = TextEditingController(
+      text: initial.priceDelta.toStringAsFixed(2).replaceAll('.', ','),
+    );
+
+    return showDialog<ProductOptionItem>(
+      context: context,
+      builder: (ctx) {
+        final tokens = Theme.of(ctx).extension<AppTokens>()!;
+
+        return AlertDialog(
+          title: Text(
+            title,
+            style: AppTypography.title.copyWith(
+              color: tokens.text,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(title,
-                  style: t.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: t.textTheme.bodySmall?.copyWith(color: t.hintColor),
+              TextField(
+                controller: nameC,
+                style: AppTypography.body.copyWith(
+                  color: tokens.text,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Seçenek adı',
+                  hintText: 'Örn: Orta',
+                  labelStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
+                  hintStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: priceC,
+                keyboardType: TextInputType.number,
+                style: AppTypography.body.copyWith(
+                  color: tokens.text,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Fiyat farkı',
+                  hintText: '0,00',
+                  labelStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
+                  hintStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
+                ),
               ),
             ],
           ),
-        ),
-        if (trailing != null) ...[
-          const SizedBox(width: 10),
-          trailing,
-        ],
-      ],
-    );
-  }
-
-  Widget _emptyHint(ThemeData t, {required String text}) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: t.colorScheme.surfaceContainerHighest.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: t.dividerColor.withValues(alpha: 0.55)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline, color: t.hintColor, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: t.textTheme.bodySmall?.copyWith(color: t.hintColor),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'İptal',
+                style: AppTypography.bodyStrong.copyWith(
+                  color: tokens.muted,
+                ),
+              ),
             ),
-          ),
-        ],
-      ),
+            FilledButton(
+              onPressed: () {
+                final n = nameC.text.trim();
+                if (n.isEmpty) return;
+
+                final d = double.tryParse(priceC.text.replaceAll(',', '.')) ?? 0;
+
+                Navigator.pop(
+                  ctx,
+                  ProductOptionItem(
+                    id: initial.id,
+                    name: n,
+                    priceDelta: d,
+                  ),
+                );
+              },
+              child: Text(
+                'Kaydet',
+                style: AppTypography.button.copyWith(
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
-
-  // ==========================================================
-  // COMMIT
-  // ==========================================================
 
   void _commit() {
     final name = _name.text.trim();
@@ -471,93 +928,32 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
 
     final price = double.tryParse(_price.text.replaceAll(',', '.')) ?? 0;
 
-    // ✅ self reference guard: ürün kendini ekstra yapmasın
-    final selfId = _p.id;
-    final cleanedExtras = _p.extras
-        .where((x) => x.extraProductId != selfId)
-        .toList();
-
     final updated = _p.copyWith(
       name: name,
       description: _desc.text.trim(),
       price: price,
-      extras: cleanedExtras,
     );
 
     Navigator.pop(
       context,
-      ProductEditResult(product: updated, updatedLibrary: _lib),
-    );
-  }
-
-  // ==========================================================
-  // ✅ EXTRAS: PICKER + CRUD
-  // ==========================================================
-
-  Future<void> _openExtrasPicker() async {
-    // UX: alttan sheet, arama + checkbox
-    final picked = await showModalBottomSheet<List<ProductExtraRef>>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ExtrasPickerSheet(
-        title: 'Ekstra seç',
-        all: widget.allProducts.where((x) => x.id != _p.id).toList(),
-        initial: _p.extras,
+      ProductEditResult(
+        product: updated,
+        updatedLibrary: _lib,
       ),
     );
-
-    if (picked == null) return;
-
-    setState(() {
-      _p = _p.copyWith(extras: picked);
-    });
   }
 
-  Future<void> _editExtraMaxQty(ProductExtraRef ref) async {
-    final txt = await _textDialog(
-      'Max adet',
-      hint: 'Örn: 1 / 2 / 3',
-      initial: ref.maxQty.toString(),
-    );
-    if (txt == null) return;
-
-    final v = int.tryParse(txt.trim());
-    final safe = (v == null || v < 1) ? 1 : v;
-
-    setState(() {
-      _p = _p.copyWith(
-        extras: _p.extras
-            .map((x) => x.extraProductId == ref.extraProductId
-            ? x.copyWith(maxQty: safe)
-            : x)
-            .toList(),
-      );
-    });
-  }
-
-  void _removeExtra(String extraProductId) {
-    setState(() {
-      _p = _p.copyWith(
-        extras: _p.extras.where((x) => x.extraProductId != extraProductId).toList(),
-      );
-    });
-  }
-
-  // ------------------------------------------------------------
-  // Add ingredient flow: ask amount + unit (ref override)
-  // ------------------------------------------------------------
-
-  Future<void> _addIngredientFlow({required IngredientLibraryItem existingItem}) async {
+  Future<void> _addIngredientFlow({
+    required IngredientLibraryItem existingItem,
+  }) async {
     if (_p.ingredients.any((x) => x.ingredientId == existingItem.id)) {
       _ingSearch.clear();
       return;
     }
 
-    final picked = await showDialog<IngredientPickResult>(
+    final picked = await showDialog<pick_dialog.IngredientPickResult>(
       context: context,
-      builder: (_) => IngredientPickDialog(
+      builder: (_) => pick_dialog.IngredientPickDialog(
         name: existingItem.name,
         defaultUnit: existingItem.unit,
       ),
@@ -592,6 +988,7 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
         unit: IngredientUnit.adet,
       ),
     );
+
     if (already.id.isNotEmpty) {
       await _addIngredientFlow(existingItem: already);
       return;
@@ -599,17 +996,15 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
 
     final created = await showDialog<IngredientLibraryItem>(
       context: context,
-      builder: (_) => IngredientQuickCreateDialog(
+      builder: (_) => quick_dialog.IngredientQuickCreateDialog(
         initialName: rawName,
-        newId: _tmpId(),
+        newId: _uuid.v4(),
       ),
     );
 
     if (created == null) return;
 
-    setState(() {
-      _lib = [..._lib, created];
-    });
+    setState(() => _lib = [..._lib, created]);
 
     await _addIngredientFlow(existingItem: created);
     _ingSearch.clear();
@@ -629,9 +1024,11 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
     setState(() {
       _p = _p.copyWith(
         ingredients: _p.ingredients
-            .map((x) => x.ingredientId == ref.ingredientId
-            ? x.copyWith(amount: amount)
-            : x)
+            .map(
+              (x) => x.ingredientId == ref.ingredientId
+              ? x.copyWith(amount: amount)
+              : x,
+        )
             .toList(),
       );
     });
@@ -641,245 +1038,140 @@ class _ProductEditorSheetState extends State<ProductEditorSheet> {
     setState(() {
       _p = _p.copyWith(
         ingredients: _p.ingredients
-            .map((x) => x.ingredientId == ref.ingredientId
-            ? x.copyWith(unitOverride: unit)
-            : x)
+            .map(
+              (x) => x.ingredientId == ref.ingredientId
+              ? x.copyWith(unitOverride: unit, setUnitOverride: true)
+              : x,
+        )
             .toList(),
       );
     });
   }
 
-  // ==========================================================
-  // Dialog helper (local)
-  // ==========================================================
-
-  Future<String?> _textDialog(
-      String title, {
-        required String hint,
-        String initial = '',
-      }) async {
-    final c = TextEditingController(text: initial);
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: c,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(hintText: hint),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('Tamam')),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================
-// ✅ Extras Picker BottomSheet (arama + checkbox + max qty)
-// ============================================================
-
-class _ExtrasPickerSheet extends StatefulWidget {
-  final String title;
-  final List<ProductModel> all;
-  final List<ProductExtraRef> initial;
-
-  const _ExtrasPickerSheet({
-    required this.title,
-    required this.all,
-    required this.initial,
-  });
-
-  @override
-  State<_ExtrasPickerSheet> createState() => _ExtrasPickerSheetState();
-}
-
-class _ExtrasPickerSheetState extends State<_ExtrasPickerSheet> {
-  final TextEditingController _search = TextEditingController();
-  String _q = '';
-
-  late Map<String, ProductExtraRef> _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = {for (final x in widget.initial) x.extraProductId: x};
-
-    _search.addListener(() => setState(() => _q = _search.text.trim()));
-  }
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  List<ProductModel> get _filtered {
-    if (_q.isEmpty) return widget.all;
-    final q = _q.toLowerCase();
-    return widget.all.where((p) => p.name.toLowerCase().contains(q)).toList();
-  }
-
-  Future<void> _editQty(String productId) async {
-    final current = _selected[productId]?.maxQty ?? 1;
-    final c = TextEditingController(text: current.toString());
-
-    final v = await showDialog<int>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Max adet'),
-        content: TextField(
-          controller: c,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(hintText: 'Örn: 1 / 2 / 3'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
-          FilledButton(
-            onPressed: () {
-              final n = int.tryParse(c.text.trim());
-              Navigator.pop(ctx, (n == null || n < 1) ? 1 : n);
-            },
-            child: const Text('Tamam'),
-          ),
-        ],
-      ),
-    );
-
-    if (v == null) return;
-
-    setState(() {
-      final old = _selected[productId];
-      _selected[productId] = (old == null)
-          ? ProductExtraRef(
-        extraProductId: productId,
-        maxQty: v,
-        sort: 0,
-        extraProduct: null,
-      )
-          : old.copyWith(maxQty: v);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _sectionHeader(
+      BuildContext context, {
+        required String title,
+        required String subtitle,
+        required IconData icon,
+        Widget? trailing,
+      }) {
     final t = Theme.of(context);
+    final tokens = Theme.of(context).extension<AppTokens>()!;
 
-    return SafeArea(
-      child: Material(
-        color: t.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 14,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: t.colorScheme.primary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(tokens.rMd),
           ),
+          child: Icon(icon, color: t.colorScheme.primary),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.title,
-                      style: t.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Kapat'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () {
-                      final out = _selected.values.toList();
-                      Navigator.pop(context, out);
-                    },
-                    child: const Text('Tamam'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _search,
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search),
-                  hintText: 'Ekstra ürün ara',
+              Text(
+                title,
+                style: AppTypography.bodyStrong.copyWith(
+                  color: tokens.text,
                 ),
               ),
-              const SizedBox(height: 10),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _filtered.length,
-                  itemBuilder: (_, i) {
-                    final p = _filtered[i];
-                    final isOn = _selected.containsKey(p.id);
-                    final maxQty = _selected[p.id]?.maxQty ?? 1;
-
-                    return Card(
-                      elevation: 0,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: Checkbox(
-                          value: isOn,
-                          onChanged: (v) {
-                            setState(() {
-                              if (v == true) {
-                                _selected[p.id] = ProductExtraRef(
-                                  extraProductId: p.id,
-                                  maxQty: 1,
-                                  sort: 0,
-                                  extraProduct: p, // UI cache
-                                );
-                              } else {
-                                _selected.remove(p.id);
-                              }
-                            });
-                          },
-                        ),
-                        title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text(
-                          '${p.price.toStringAsFixed(2).replaceAll(".", ",")} ₺'
-                              '${isOn ? ' • max $maxQty' : ''}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: isOn
-                            ? IconButton(
-                          tooltip: 'Max adet',
-                          icon: const Icon(Icons.tune),
-                          onPressed: () => _editQty(p.id),
-                        )
-                            : null,
-                        onTap: () {
-                          setState(() {
-                            if (!isOn) {
-                              _selected[p.id] = ProductExtraRef(
-                                extraProductId: p.id,
-                                maxQty: 1,
-                                sort: 0,
-                                extraProduct: p,
-                              );
-                            } else {
-                              _selected.remove(p.id);
-                            }
-                          });
-                        },
-                      ),
-                    );
-                  },
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: AppTypography.caption.copyWith(
+                  color: tokens.muted,
                 ),
               ),
             ],
           ),
         ),
+        if (trailing != null) ...[
+          const SizedBox(width: 10),
+          trailing,
+        ],
+      ],
+    );
+  }
+
+  Widget _emptyHint(
+      BuildContext context, {
+        required String text,
+      }) {
+    final t = Theme.of(context);
+    final tokens = Theme.of(context).extension<AppTokens>()!;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.colorScheme.surfaceContainerHighest.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(tokens.rMd),
+        border: Border.all(
+          color: t.dividerColor.withValues(alpha: 0.55),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: tokens.muted, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTypography.caption.copyWith(
+                color: tokens.muted,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+class ProductEditResult {
+  final ProductModel product;
+  final List<IngredientLibraryItem> updatedLibrary;
+
+  const ProductEditResult({
+    required this.product,
+    required this.updatedLibrary,
+  });
+}
+
+class IngredientUnitOverrideField extends FormField<IngredientUnit> {
+  IngredientUnitOverrideField({
+    super.key,
+    required String label,
+    required IngredientUnit initial,
+    required ValueChanged<IngredientUnit> onChanged,
+  }) : super(
+    initialValue: initial,
+    builder: (state) {
+      return DropdownButtonFormField<IngredientUnit>(
+        initialValue: state.value,
+        decoration: InputDecoration(
+          labelText: label,
+          errorText: state.errorText,
+        ),
+        items: IngredientUnit.values
+            .map(
+              (u) => DropdownMenuItem(
+            value: u,
+            child: Text(u.label),
+          ),
+        )
+            .toList(),
+        onChanged: (v) {
+          if (v == null) return;
+          state.didChange(v);
+          onChanged(v);
+        },
+      );
+    },
+  );
 }

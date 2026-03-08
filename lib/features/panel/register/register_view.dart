@@ -41,13 +41,20 @@ class _PanelRegisterViewState extends State<PanelRegisterView> {
 
   @override
   Widget build(BuildContext context) {
+
+    final tokens = Theme.of(context).extension<AppTokens>()!;
     return Theme(
       data: AppetiteTheme.light(),
       child: Scaffold(
         body: Stack(
           children: [
-            Container(decoration: AppetiteTheme.background()),
-            Container(decoration: AppetiteTheme.background2()),
+            Container(
+              decoration: AppetiteTheme.background(context),
+            ),
+
+            Container(
+              decoration: AppetiteTheme.background2(context),
+            ),
             SafeArea(
               child: Center(
                 child: SingleChildScrollView(
@@ -64,7 +71,7 @@ class _PanelRegisterViewState extends State<PanelRegisterView> {
                           Text(
                             'Admin hesabını oluştur. Sonra e-postanı onaylayıp giriş yap.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: AppTokens.muted, fontSize: 13, height: 1.35),
+                            style: TextStyle(color: tokens.muted, fontSize: 13, height: 1.35),
                           ),
                           const SizedBox(height: 14),
 
@@ -142,7 +149,7 @@ class _PanelRegisterViewState extends State<PanelRegisterView> {
                                     'E-postana doğrulama linki gönderdik.\n'
                                         'Onayladıktan sonra giriş yapabilirsin.',
                                     textAlign: TextAlign.center,
-                                    style: TextStyle(color: AppTokens.muted, fontSize: 13, height: 1.35),
+                                    style: TextStyle(color: tokens.muted, fontSize: 13, height: 1.35),
                                   ),
                                   const SizedBox(height: 14),
                                   GradientButton(
@@ -166,7 +173,7 @@ class _PanelRegisterViewState extends State<PanelRegisterView> {
                             onTap: () => Navigator.pushReplacementNamed(context, '/panel/login'),
                             child: Text(
                               'Zaten hesabın var mı? Giriş Yap',
-                              style: TextStyle(color: AppTokens.primary, fontWeight: FontWeight.w900),
+                              style: TextStyle(color: tokens.primary, fontWeight: FontWeight.w900),
                             ),
                           ),
                         ],

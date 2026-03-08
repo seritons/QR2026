@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app/routes/app_routes.dart';
 import 'app/sessions/app_session.dart';
+import 'app/theme/appetite_theme.dart';
 import 'features/panel/login/login_view.dart';
 import 'features/panel/onboarding/business/business_view.dart';
 import 'features/panel/onboarding/business/select/business_select_view.dart';
@@ -48,6 +49,9 @@ class QrPanelApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
+        theme: AppetiteTheme.light(),
+        darkTheme: AppetiteTheme.dark(),
+        themeMode: ThemeMode.light,
         debugShowCheckedModeBanner: false,
         initialRoute: AppRoutes.login,
         routes: {

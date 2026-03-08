@@ -8,6 +8,7 @@ class PanelAnalyticsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<AppTokens>()!;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
@@ -19,7 +20,7 @@ class PanelAnalyticsView extends StatelessWidget {
               children: [
                 const Text('Analiz', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
-                Text('MVP: ciro trendi / yoğunluk / top ürün burada.', style: TextStyle(color: AppTokens.muted)),
+                Text('MVP: ciro trendi / yoğunluk / top ürün burada.', style: TextStyle(color: tokens.muted)),
               ],
             ),
           ),

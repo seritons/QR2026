@@ -13,13 +13,15 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<AppTokens>()!;
+
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: AppTokens.surface,
-        borderRadius: BorderRadius.circular(AppTokens.rLg),
-        border: Border.all(color: AppTokens.border),
-        boxShadow: AppTokens.shadow,
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(tokens.rLg),
+        border: Border.all(color: tokens.border),
+        boxShadow: tokens.shadow,
       ),
       child: child,
     );

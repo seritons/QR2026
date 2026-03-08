@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-
+import 'package:uuid/uuid.dart';
+import '../../../../app/theme/app_typography.dart';
+import '../../../../app/theme/tokens.dart';
 import '../menu_models.dart';
 
 class EventCreatorSheet extends StatefulWidget {
@@ -20,13 +22,14 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
   late final TextEditingController _name;
   late final TextEditingController _discount;
 
+  final Uuid _uuid = const Uuid();
+
   EventScheduleType _type = EventScheduleType.oneTime;
 
   DateTime? _onceStart;
   DateTime? _onceEnd;
 
-  // recurring (weekly-like)
-  final Set<int> _days = {1, 2, 3, 4, 5}; // 1..7 (Mon..Sun)
+  final Set<int> _days = {1, 2, 3, 4, 5}; // 1..7
   TimeOfDay _weeklyStart = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay _weeklyEnd = const TimeOfDay(hour: 18, minute: 0);
 
@@ -37,6 +40,9 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
     super.initState();
     _name = TextEditingController();
     _discount = TextEditingController(text: '10');
+
+    _name.addListener(() => setState(() {}));
+    _discount.addListener(() => setState(() {}));
   }
 
   @override
@@ -46,21 +52,33 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
     super.dispose();
   }
 
+  bool get _isWeeklyTimeValid {
+    final startMinutes = (_weeklyStart.hour * 60) + _weeklyStart.minute;
+    final endMinutes = (_weeklyEnd.hour * 60) + _weeklyEnd.minute;
+    return endMinutes > startMinutes;
+  }
+
+  bool get _canCommit {
+    final disc = double.tryParse(_discount.text.replaceAll(',', '.')) ?? 0;
+    final hasName = _name.text.trim().isNotEmpty;
+    final validDiscount = disc > 0 && disc <= 100;
+    final hasProducts = _pickedProductIds.isNotEmpty;
+
+    if (!hasName || !validDiscount || !hasProducts) return false;
+
+    if (_type == EventScheduleType.oneTime) {
+      if (_onceStart == null || _onceEnd == null) return false;
+      return _onceEnd!.isAfter(_onceStart!);
+    }
+
+    return _days.isNotEmpty && _isWeeklyTimeValid;
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
+    final tokens = Theme.of(context).extension<AppTokens>()!;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-    final disc = double.tryParse(_discount.text.replaceAll(',', '.')) ?? 0;
-
-    final canCommit = _name.text.trim().isNotEmpty &&
-        disc > 0 &&
-        disc <= 100 &&
-        _pickedProductIds.isNotEmpty &&
-        (_type == EventScheduleType.recurring ||
-            (_onceStart != null &&
-                _onceEnd != null &&
-                _onceEnd!.isAfter(_onceStart!)));
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
@@ -70,7 +88,9 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
         maxChildSize: 0.95,
         builder: (_, controller) => Material(
           color: t.colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(tokens.rLg),
+          ),
           child: ListView(
             controller: controller,
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
@@ -80,7 +100,7 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
                   width: 44,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: t.dividerColor,
+                    color: tokens.divider,
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
@@ -91,95 +111,139 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
                   Expanded(
                     child: Text(
                       widget.title,
-                      style: t.textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                      style: AppTypography.title.copyWith(
+                        color: tokens.text,
+                      ),
                     ),
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Kapat'),
+                    child: Text(
+                      'Kapat',
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: tokens.muted,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: canCommit ? _commit : null,
-                    child: const Text('Oluştur'),
+                    onPressed: _canCommit ? _commit : null,
+                    child: Text(
+                      'Oluştur',
+                      style: AppTypography.button.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-
               TextField(
                 controller: _name,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(labelText: 'Kampanya adı'),
-              ),
-              const SizedBox(height: 12),
-
-              TextField(
-                controller: _discount,
-                onChanged: (_) => setState(() {}),
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'İndirim (%)',
-                  hintText: '10',
+                style: AppTypography.body.copyWith(
+                  color: tokens.text,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Kampanya adı',
+                  labelStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
                 ),
               ),
-
+              const SizedBox(height: 12),
+              TextField(
+                controller: _discount,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: AppTypography.body.copyWith(
+                  color: tokens.text,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'İndirim (%)',
+                  hintText: '10',
+                  labelStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
+                  hintStyle: AppTypography.body.copyWith(
+                    color: tokens.muted,
+                  ),
+                ),
+              ),
               const SizedBox(height: 16),
               Text(
                 'Zaman',
-                style: t.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w800),
+                style: AppTypography.bodyStrong.copyWith(
+                  color: tokens.text,
+                ),
               ),
               const SizedBox(height: 8),
-
               SegmentedButton<EventScheduleType>(
-                segments: const [
+                segments: [
                   ButtonSegment(
                     value: EventScheduleType.oneTime,
-                    label: Text('Tek'),
-                    icon: Icon(Icons.event),
+                    label: Text(
+                      'Tek',
+                      style: AppTypography.caption.copyWith(
+                        color: tokens.text,
+                      ),
+                    ),
+                    icon: const Icon(Icons.event),
                   ),
                   ButtonSegment(
                     value: EventScheduleType.recurring,
-                    label: Text('Tekrar'),
-                    icon: Icon(Icons.repeat),
+                    label: Text(
+                      'Tekrar',
+                      style: AppTypography.caption.copyWith(
+                        color: tokens.text,
+                      ),
+                    ),
+                    icon: const Icon(Icons.repeat),
                   ),
                 ],
                 selected: {_type},
                 onSelectionChanged: (s) => setState(() => _type = s.first),
               ),
-
               const SizedBox(height: 10),
               if (_type == EventScheduleType.oneTime)
-                ..._buildOnce(t)
+                ..._buildOnce(context)
               else
-                ..._buildRecurring(t),
-
+                ..._buildRecurring(context),
               const SizedBox(height: 18),
               Text(
                 'Ürün seç',
-                style: t.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w800),
+                style: AppTypography.bodyStrong.copyWith(
+                  color: tokens.text,
+                ),
               ),
               const SizedBox(height: 8),
+              if (widget.products.isEmpty)
+                _emptyHint(context, 'Bu menüde ürün yok. Önce ürün oluşturmalısın.')
+              else
+                ...widget.products.map((p) {
+                  final on = _pickedProductIds.contains(p.id);
 
-              ...widget.products.map((p) {
-                final on = _pickedProductIds.contains(p.id);
-                return Card(
-                  elevation: 0,
-                  child: CheckboxListTile(
-                    value: on,
-                    title: Text(p.name),
-                    subtitle:
-                    Text('${p.price.toStringAsFixed(2).replaceAll('.', ',')} ₺'),
-                    onChanged: (v) => setState(() {
-                      if (v == true) _pickedProductIds.add(p.id);
-                      if (v == false) _pickedProductIds.remove(p.id);
-                    }),
-                  ),
-                );
-              }),
+                  return Card(
+                    elevation: 0,
+                    child: CheckboxListTile(
+                      value: on,
+                      title: Text(
+                        p.name,
+                        style: AppTypography.bodyStrong.copyWith(
+                          color: tokens.text,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${p.price.toStringAsFixed(2).replaceAll('.', ',')} ₺',
+                        style: AppTypography.caption.copyWith(
+                          color: tokens.muted,
+                        ),
+                      ),
+                      onChanged: (v) => setState(() {
+                        if (v == true) _pickedProductIds.add(p.id);
+                        if (v == false) _pickedProductIds.remove(p.id);
+                      }),
+                    ),
+                  );
+                }),
             ],
           ),
         ),
@@ -187,7 +251,10 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
     );
   }
 
-  List<Widget> _buildOnce(ThemeData t) {
+  List<Widget> _buildOnce(BuildContext context) {
+    final t = Theme.of(context);
+    final tokens = Theme.of(context).extension<AppTokens>()!;
+
     return [
       Card(
         elevation: 0,
@@ -202,18 +269,23 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
                       _onceStart == null
                           ? 'Başlangıç seç'
                           : 'Başlangıç: ${_fmtDT(_onceStart!)}',
-                      style: t.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: tokens.text,
+                      ),
                     ),
                   ),
                   TextButton(
                     onPressed: () async {
                       final picked = await _pickDateTime();
-                      if (!mounted) return;
-                      if (picked == null) return;
+                      if (!mounted || picked == null) return;
                       setState(() => _onceStart = picked);
                     },
-                    child: const Text('Seç'),
+                    child: Text(
+                      'Seç',
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: t.colorScheme.primary,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -222,22 +294,43 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      _onceEnd == null ? 'Bitiş seç' : 'Bitiş: ${_fmtDT(_onceEnd!)}',
-                      style: t.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      _onceEnd == null
+                          ? 'Bitiş seç'
+                          : 'Bitiş: ${_fmtDT(_onceEnd!)}',
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: tokens.text,
+                      ),
                     ),
                   ),
                   TextButton(
                     onPressed: () async {
                       final picked = await _pickDateTime();
-                      if (!mounted) return;
-                      if (picked == null) return;
+                      if (!mounted || picked == null) return;
                       setState(() => _onceEnd = picked);
                     },
-                    child: const Text('Seç'),
+                    child: Text(
+                      'Seç',
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: t.colorScheme.primary,
+                      ),
+                    ),
                   ),
                 ],
               ),
+              if (_onceStart != null &&
+                  _onceEnd != null &&
+                  !_onceEnd!.isAfter(_onceStart!)) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Bitiş zamanı başlangıçtan sonra olmalı.',
+                    style: AppTypography.caption.copyWith(
+                      color: t.colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -245,15 +338,26 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
     ];
   }
 
-  List<Widget> _buildRecurring(ThemeData t) {
+  List<Widget> _buildRecurring(BuildContext context) {
+    final t = Theme.of(context);
+    final tokens = Theme.of(context).extension<AppTokens>()!;
+
     Widget dayChip(int day, String label) {
       final on = _days.contains(day);
       return FilterChip(
         selected: on,
-        label: Text(label),
+        label: Text(
+          label,
+          style: AppTypography.caption.copyWith(
+            color: on ? tokens.text : tokens.muted,
+          ),
+        ),
         onSelected: (v) => setState(() {
-          if (v) _days.add(day);
-          if (!v) _days.remove(day);
+          if (v) {
+            _days.add(day);
+          } else {
+            _days.remove(day);
+          }
         }),
       );
     }
@@ -266,9 +370,12 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Günler',
-                  style: t.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w800)),
+              Text(
+                'Günler',
+                style: AppTypography.bodyStrong.copyWith(
+                  color: tokens.text,
+                ),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -289,8 +396,9 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
                   Expanded(
                     child: Text(
                       'Başlangıç: ${_fmtTOD(_weeklyStart)}',
-                      style: t.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: tokens.text,
+                      ),
                     ),
                   ),
                   TextButton(
@@ -299,11 +407,15 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
                         context: context,
                         initialTime: _weeklyStart,
                       );
-                      if (!mounted) return;
-                      if (p == null) return;
+                      if (!mounted || p == null) return;
                       setState(() => _weeklyStart = p);
                     },
-                    child: const Text('Seç'),
+                    child: Text(
+                      'Seç',
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: t.colorScheme.primary,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -312,8 +424,9 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
                   Expanded(
                     child: Text(
                       'Bitiş: ${_fmtTOD(_weeklyEnd)}',
-                      style: t.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: tokens.text,
+                      ),
                     ),
                   ),
                   TextButton(
@@ -322,14 +435,36 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
                         context: context,
                         initialTime: _weeklyEnd,
                       );
-                      if (!mounted) return;
-                      if (p == null) return;
+                      if (!mounted || p == null) return;
                       setState(() => _weeklyEnd = p);
                     },
-                    child: const Text('Seç'),
+                    child: Text(
+                      'Seç',
+                      style: AppTypography.bodyStrong.copyWith(
+                        color: t.colorScheme.primary,
+                      ),
+                    ),
                   ),
                 ],
               ),
+              if (_days.isEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'En az 1 gün seçmelisin.',
+                  style: AppTypography.caption.copyWith(
+                    color: t.colorScheme.error,
+                  ),
+                ),
+              ],
+              if (!_isWeeklyTimeValid) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Bitiş saati başlangıç saatinden sonra olmalı.',
+                  style: AppTypography.caption.copyWith(
+                    color: t.colorScheme.error,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -379,17 +514,21 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
       if (!_onceEnd!.isAfter(_onceStart!)) return;
     } else {
       if (_days.isEmpty) return;
-      // MVP: end-before-start check optional
+      if (!_isWeeklyTimeValid) return;
     }
 
     final weekly = (_type == EventScheduleType.recurring)
-        ? WeeklyRuleDraft(days: {..._days}, start: _weeklyStart, end: _weeklyEnd)
+        ? WeeklyRuleDraft(
+      days: {..._days},
+      start: _weeklyStart,
+      end: _weeklyEnd,
+    )
         : null;
 
     Navigator.pop(
       context,
       EventDraft(
-        id: 'tmp_${DateTime.now().microsecondsSinceEpoch}',
+        id: _uuid.v4(),
         name: name,
         discountPercent: disc,
         scheduleType: _type,
@@ -397,6 +536,36 @@ class _EventCreatorSheetState extends State<EventCreatorSheet> {
         startsAt: _onceStart,
         endsAt: _onceEnd,
         weekly: weekly,
+      ),
+    );
+  }
+
+  Widget _emptyHint(BuildContext context, String text) {
+    final t = Theme.of(context);
+    final tokens = Theme.of(context).extension<AppTokens>()!;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.colorScheme.surfaceContainerHighest.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(tokens.rMd),
+        border: Border.all(
+          color: t.dividerColor.withValues(alpha: 0.55),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: tokens.muted, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTypography.caption.copyWith(
+                color: tokens.muted,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

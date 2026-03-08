@@ -20,6 +20,7 @@ class PanelDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final services = context.read<AppServices>();
+    final tokens = Theme.of(context).extension<AppTokens>()!;
 
     return Drawer(
       child: SafeArea(
@@ -32,8 +33,8 @@ class PanelDrawer extends StatelessWidget {
                 children: [
                   CircleAvatar(
                     radius: 18,
-                    backgroundColor: AppTokens.primary.withOpacity(0.12),
-                    child: Icon(Icons.store, color: AppTokens.primary),
+                    backgroundColor: tokens.primary.withOpacity(0.12),
+                    child: Icon(Icons.store, color: tokens.primary),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -44,7 +45,7 @@ class PanelDrawer extends StatelessWidget {
                         if (subtitle != null)
                           Text(
                             subtitle!,
-                            style: TextStyle(color: AppTokens.muted, fontSize: 12),
+                            style: TextStyle(color: tokens.muted, fontSize: 12),
                             overflow: TextOverflow.ellipsis,
                           ),
                       ],

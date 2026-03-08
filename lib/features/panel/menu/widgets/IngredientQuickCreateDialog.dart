@@ -1,10 +1,8 @@
-
-
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-
+import '../../../../app/theme/app_typography.dart';
+import '../../../../app/theme/tokens.dart';
 import '../menu_models.dart';
-import '../menu_view.dart';
+import 'ProductEditorSheet.dart';
 
 class IngredientQuickCreateDialog extends StatefulWidget {
   final String initialName;
@@ -35,16 +33,38 @@ class _IngredientQuickCreateDialogState extends State<IngredientQuickCreateDialo
   }
 
   @override
+  void dispose() {
+    _name.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<AppTokens>()!;
+
     return AlertDialog(
-      title: const Text('İçerik oluştur'),
+      title: Text(
+        'İçerik oluştur',
+        style: AppTypography.title.copyWith(
+          color: tokens.text,
+        ),
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
             controller: _name,
             autofocus: true,
-            decoration: const InputDecoration(labelText: 'İçerik adı'),
+            style: AppTypography.body.copyWith(
+              color: tokens.text,
+            ),
+            decoration: InputDecoration(
+              labelText: 'İçerik adı',
+              labelStyle: AppTypography.body.copyWith(
+                color: tokens.muted,
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           IngredientUnitOverrideField(
@@ -55,17 +75,32 @@ class _IngredientQuickCreateDialogState extends State<IngredientQuickCreateDialo
           const SizedBox(height: 12),
           TextField(
             controller: _note,
-            decoration: const InputDecoration(
+            style: AppTypography.body.copyWith(
+              color: tokens.text,
+            ),
+            decoration: InputDecoration(
               labelText: 'Not (opsiyonel)',
               hintText: 'örn: L boy, organik',
+              labelStyle: AppTypography.body.copyWith(
+                color: tokens.muted,
+              ),
+              hintStyle: AppTypography.body.copyWith(
+                color: tokens.muted,
+              ),
             ),
           ),
         ],
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('İptal')),
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'İptal',
+            style: AppTypography.bodyStrong.copyWith(
+              color: tokens.muted,
+            ),
+          ),
+        ),
         FilledButton(
           onPressed: () {
             final name = _name.text.trim();
@@ -81,7 +116,12 @@ class _IngredientQuickCreateDialogState extends State<IngredientQuickCreateDialo
               ),
             );
           },
-          child: const Text('Ekle'),
+          child: Text(
+            'Ekle',
+            style: AppTypography.button.copyWith(
+              color: Colors.white,
+            ),
+          ),
         ),
       ],
     );

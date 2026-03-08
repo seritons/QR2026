@@ -1,148 +1,275 @@
-// lib/features/panel/menu/menu_viewmodel.dart
-//
-// ✅ Yeni VM: “anında yaz” (immediate persist) mimarisi
-// - Menü/Category/Product/Ingredient/Extras/Combo/Event: create/edit/delete -> RPC ile anında yazar
-// - Artık “Kaydet / İptal” yok (istersen UI’da gösterebilirsin ama noop)
-// - Dirty/hash/snapshot kaldırıldı (çünkü state server ile hemen senkron)
-//
-// Notlar:
-// - Client UUID kullanıyoruz (tmp id yok). Bu yüzden id_map artık fiilen gereksiz.
-// - Ürün içerikleri (ingredients) ayrı RPC ile replace ediliyor: setProductIngredients
-// - Ekstralar (extras) için DB tarafında ara tablo (product_extras) yazılacak demiştin.
-//   Bu VM, extras değişince de “ürünü upsert” ediyor. Eğer backend extras’ı ayrı RPC ile yazıyorsa,
-//   MenuService’te rpcSetProductExtras gibi bir fonksiyon ekleyip burada çağır.
-//
-// ÖNEMLİ: Bu dosya MenuService’te verdiğim yeni RPC wrapper’larına göre yazıldı.
-// - upsertMenu / deleteMenu
-// - upsertCategory / deleteCategory
-// - upsertProduct / deleteProduct
-// - upsertIngredientLibraryItem / deleteIngredientLibraryItem
-// - setProductIngredients
-// - upsertCombo / deleteCombo
-// - upsertEvent / deleteEvent
-
-import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
-
 import '../../../app/sessions/menu_session.dart';
 import '../../../services/menu_service.dart';
 import 'menu_models.dart';
 
 class MenuViewModel extends ChangeNotifier {
-  final MenuService _menuService;
-  final MenuSession _menuSession;
-
+  final MenuSession session;
+  final MenuService service;
   final String businessId;
 
   MenuViewModel({
-    required MenuService menuService,
-    required MenuSession menuSession,
+    required this.session,
+    required this.service,
     required this.businessId,
-  })  : _menuService = menuService,
-        _menuSession = menuSession;
+  });
 
-  void _log(String msg) => debugPrint('[MenuVM] $msg');
+  final _uuid = const Uuid();
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  bool _isSaving = false;
+  bool get isSaving => _isSaving;
+
   String? _error;
   String? get error => _error;
 
-  List<MenuModel> get menusLight => _menuSession.menusLight;
-  MenuModel? get activeMenuFull => _menuSession.activeMenuFull;
-  String? get activeMenuId => _menuSession.activeMenuId;
+  DateTime? _lastSyncAt;
+  DateTime? get lastSyncAt => _lastSyncAt;
 
-  bool get hasActiveMenu => _menuSession.activeMenuFull != null;
+  List<MenuModel> get menusLight => session.menusLight;
+  MenuModel? get activeMenuFull => session.activeMenuFull;
+  String? get activeMenuId => session.activeMenuId;
+  bool get hasActiveMenu => session.hasActiveMenu;
 
-  final _uuid = const Uuid();
+  // =========================================================
+  // LOG HELPERS
+  // =========================================================
+  void _log(String msg) => debugPrint('[MenuVM] $msg');
+
+  String _menuSummary(MenuModel? m) {
+    if (m == null) return 'null';
+    return 'Menu(id=${m.id}, name="${m.name}", '
+        'cats=${m.categories.length}, '
+        'lib=${m.ingredientLibrary.length}, '
+        'combos=${m.combos.length}, '
+        'events=${m.events.length})';
+  }
+
+  String _menusLightSummary(List<MenuModel> menus) {
+    if (menus.isEmpty) return '[]';
+    return menus.map((m) => '{id=${m.id}, name="${m.name}"}').join(', ');
+  }
+
+  void _logSessionState([String prefix = 'SESSION']) {
+    _log(
+      '$prefix '
+          'activeMenuId=${session.activeMenuId} '
+          'hasActiveMenu=${session.hasActiveMenu} '
+          'menusLightCount=${session.menusLight.length} '
+          'menusFullCount=${session.menusFull.length} '
+          'activeMenu=${_menuSummary(session.activeMenuFull)}',
+    );
+  }
+
+  void _logMethodStart(String name, [Map<String, Object?> extra = const {}]) {
+    _log('--------------------------------------------------');
+    _log('$name START');
+    _log('$name state_before: '
+        'isLoading=$_isLoading isSaving=$_isSaving error=$_error lastSyncAt=$_lastSyncAt');
+    _log('$name businessId="$businessId"');
+    if (extra.isNotEmpty) {
+      _log('$name args=$extra');
+    }
+    _logSessionState('$name session_before');
+  }
+
+  void _logMethodDone(String name, [Map<String, Object?> extra = const {}]) {
+    if (extra.isNotEmpty) {
+      _log('$name result=$extra');
+    }
+    _logSessionState('$name session_after');
+    _log('$name DONE');
+    _log('--------------------------------------------------');
+  }
+
+  void _logMethodError(String name, Object e, [StackTrace? st]) {
+    _log('$name ERROR=$e');
+    if (st != null) {
+      _log('$name STACK=$st');
+    }
+    _logSessionState('$name session_error');
+    _log('--------------------------------------------------');
+  }
 
   // =========================================================
   // INIT
   // =========================================================
   Future<void> init({String? preferMenuId}) async {
+    _logMethodStart('init', {
+      'preferMenuId': preferMenuId,
+    });
+
     _setLoading(true);
     _setError(null);
 
     try {
-      _log('init START businessId="$businessId" preferMenuId="$preferMenuId"');
+      _log('init -> calling service.fetchMenusLight');
+      final lightMenus = await service.fetchMenusLight(
+        businessId: businessId,
+      );
 
-      final light = await _menuService.fetchMenusLight(businessId: businessId);
-      _menuSession.setMenusLight(light);
+      _log('init <- service.fetchMenusLight returned count=${lightMenus.length}');
+      _log('init lightMenus=${_menusLightSummary(lightMenus)}');
 
-      final pickedId = (preferMenuId?.trim().isNotEmpty == true)
+      session.setMenusLight(lightMenus, preferActiveMenuId: preferMenuId);
+      _logSessionState('init after setMenusLight');
+
+      final targetId = preferMenuId?.trim().isNotEmpty == true
           ? preferMenuId!.trim()
-          : (light.isNotEmpty ? light.first.id : null);
+          : (lightMenus.isNotEmpty ? lightMenus.first.id : null);
 
-      if (pickedId == null) {
-        _menuSession.clear();
-        _log('init DONE (no menu on server)');
-        return;
+      _log('init resolved targetId=$targetId');
+
+      if (targetId != null) {
+        _log('init -> calling service.fetchMenuFull(menuId="$targetId")');
+        final full = await service.fetchMenuFull(
+          businessId: businessId,
+          menuId: targetId,
+        );
+
+        _log('init <- fetchMenuFull returned ${_menuSummary(full)}');
+        session.upsertMenu(full, select: true);
+        _logSessionState('init after upsertMenu(full)');
+      } else {
+        _log('init targetId is null, full menu fetch skipped');
       }
 
-      final full = await _menuService.fetchMenuFull(
-        businessId: businessId,
-        menuId: pickedId,
-      );
+      _lastSyncAt = DateTime.now();
 
-      final normalized = _hydrateUiCaches(full);
-      _menuSession.setActiveMenuFull(menuId: pickedId, menu: normalized);
-
-      _log('init DONE activeMenuId="$pickedId"');
-    } catch (e) {
+      _logMethodDone('init', {
+        'lightMenusCount': lightMenus.length,
+        'resolvedTargetId': targetId,
+        'lastSyncAt': _lastSyncAt.toString(),
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('init ERROR=$e');
+      _logMethodError('init', e, st);
     } finally {
       _setLoading(false);
     }
   }
 
   // =========================================================
-  // MENU SWITCH
+  // REFRESH
+  // =========================================================
+  Future<void> refreshActiveMenu() async {
+    _logMethodStart('refreshActiveMenu');
+
+    final menuId = session.activeMenuId;
+    if (menuId == null || menuId.trim().isEmpty) {
+      _log('refreshActiveMenu skipped: activeMenuId is null/empty');
+      _logMethodDone('refreshActiveMenu', {
+        'skipped': true,
+        'reason': 'no_active_menu_id',
+      });
+      return;
+    }
+
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      _log('refreshActiveMenu -> fetchMenuFull(menuId="$menuId")');
+      final full = await service.fetchMenuFull(
+        businessId: businessId,
+        menuId: menuId,
+      );
+
+      _log('refreshActiveMenu <- full=${_menuSummary(full)}');
+      session.upsertMenu(full, select: true);
+      _lastSyncAt = DateTime.now();
+
+      _logMethodDone('refreshActiveMenu', {
+        'menuId': menuId,
+        'lastSyncAt': _lastSyncAt.toString(),
+      });
+    } catch (e, st) {
+      _setError(e.toString());
+      _logMethodError('refreshActiveMenu', e, st);
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // =========================================================
+  // SELECT MENU
   // =========================================================
   Future<void> selectMenu(String menuId) async {
-    final mId = menuId.trim();
-    if (mId.isEmpty) return;
+    _logMethodStart('selectMenu', {
+      'menuId': menuId,
+    });
 
-    _setLoading(true);
+    final id = menuId.trim();
+    if (id.isEmpty) {
+      _log('selectMenu skipped: menuId empty');
+      _logMethodDone('selectMenu', {
+        'skipped': true,
+        'reason': 'empty_menu_id',
+      });
+      return;
+    }
+
     _setError(null);
+    _setLoading(true);
 
     try {
-      _log('selectMenu START menuId="$mId"');
+      final cached = session.findFullMenuById(id);
+      _log('selectMenu cacheLookup menuId="$id" hit=${cached != null}');
 
-      final full = await _menuService.fetchMenuFull(
-        businessId: businessId,
-        menuId: mId,
-      );
+      if (cached != null) {
+        _log('selectMenu CACHE HIT -> session.selectActiveMenu("$id")');
+        session.selectActiveMenu(id);
+      } else {
+        _log('selectMenu CACHE MISS -> fetchMenuFull("$id")');
+        final full = await service.fetchMenuFull(
+          businessId: businessId,
+          menuId: id,
+        );
+        _log('selectMenu <- fetchMenuFull returned ${_menuSummary(full)}');
+        session.upsertMenu(full, select: true);
+      }
 
-      final normalized = _hydrateUiCaches(full);
-      _menuSession.setActiveMenuFull(menuId: mId, menu: normalized);
+      _lastSyncAt = DateTime.now();
 
-      _log('selectMenu DONE');
-    } catch (e) {
+      _logMethodDone('selectMenu', {
+        'selectedMenuId': id,
+        'lastSyncAt': _lastSyncAt.toString(),
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('selectMenu ERROR=$e');
+      _logMethodError('selectMenu', e, st);
     } finally {
       _setLoading(false);
     }
   }
 
   // =========================================================
-  // MENU CREATE / UPDATE / DELETE (ANINDA)
+  // MENU CRUD
   // =========================================================
   Future<void> createMenuAndSelect(String name) async {
-    final n = name.trim();
-    if (n.isEmpty) return;
+    _logMethodStart('createMenuAndSelect', {
+      'name': name,
+    });
 
-    _setLoading(true);
+    final n = name.trim();
+    if (n.isEmpty) {
+      _log('createMenuAndSelect skipped: empty name');
+      _logMethodDone('createMenuAndSelect', {
+        'skipped': true,
+        'reason': 'empty_name',
+      });
+      return;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      final id = _uuid.v4();
-
       final draft = MenuModel(
-        id: id,
+        id: _uuid.v4(),
         businessId: businessId,
         name: n,
         categories: const [],
@@ -151,107 +278,178 @@ class MenuViewModel extends ChangeNotifier {
         events: const [],
       );
 
-      _log('createMenuAndSelect START id=$id name="$n"');
+      _log('createMenuAndSelect draft=${_menuSummary(draft)}');
 
-      await _menuService.upsertMenu(businessId: businessId, menu: draft);
+      _log('createMenuAndSelect -> service.upsertMenu');
+      final upsertRes = await service.upsertMenu(
+        businessId: businessId,
+        menu: draft,
+      );
+      _log('createMenuAndSelect <- upsertMenu result=$upsertRes');
 
-      // picker stabilize
-      final light = await _menuService.fetchMenusLight(businessId: businessId);
-      _menuSession.setMenusLight(light);
+      final savedMenuId = (upsertRes['menu_id'] ?? draft.id).toString();
+      _log('createMenuAndSelect resolved savedMenuId="$savedMenuId"');
 
-      // active set (local)
-      _menuSession.setActiveMenuFull(menuId: draft.id, menu: draft);
+      _log('createMenuAndSelect -> service.fetchMenuFull(savedMenuId)');
+      final full = await service.fetchMenuFull(
+        businessId: businessId,
+        menuId: savedMenuId,
+      );
+      _log('createMenuAndSelect <- full=${_menuSummary(full)}');
 
-      _log('createMenuAndSelect DONE');
-    } catch (e) {
+      session.upsertMenu(full, select: true);
+      _lastSyncAt = DateTime.now();
+
+      _logMethodDone('createMenuAndSelect', {
+        'savedMenuId': savedMenuId,
+        'lastSyncAt': _lastSyncAt.toString(),
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('createMenuAndSelect ERROR=$e');
+      _logMethodError('createMenuAndSelect', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   Future<void> renameActiveMenu(String newName) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+    _logMethodStart('renameActiveMenu', {
+      'newName': newName,
+    });
+
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('renameActiveMenu skipped: activeMenuFull is null');
+      _logMethodDone('renameActiveMenu', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
 
     final n = newName.trim();
-    if (n.isEmpty) return;
+    if (n.isEmpty) {
+      _log('renameActiveMenu skipped: newName empty');
+      _logMethodDone('renameActiveMenu', {
+        'skipped': true,
+        'reason': 'empty_name',
+      });
+      return;
+    }
 
-    _setLoading(true);
+    _setSaving(true);
     _setError(null);
 
     try {
       final updated = menu.copyWith(name: n);
+      _log('renameActiveMenu updated=${_menuSummary(updated)}');
 
-      _log('renameActiveMenu START menuId=${menu.id} name="$n"');
+      final res = await service.upsertMenu(
+        businessId: businessId,
+        menu: updated,
+      );
+      _log('renameActiveMenu <- upsertMenu result=$res');
 
-      await _menuService.upsertMenu(businessId: businessId, menu: updated);
+      session.updateActiveMenu(updated);
+      _lastSyncAt = DateTime.now();
 
-      // local update
-      _menuSession.setActiveMenuFull(menuId: updated.id, menu: updated);
-
-      // refresh picker names
-      try {
-        final light = await _menuService.fetchMenusLight(businessId: businessId);
-        _menuSession.setMenusLight(light);
-      } catch (_) {}
-
-      _log('renameActiveMenu DONE');
-    } catch (e) {
+      _logMethodDone('renameActiveMenu', {
+        'menuId': updated.id,
+        'newName': n,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('renameActiveMenu ERROR=$e');
+      _logMethodError('renameActiveMenu', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   Future<void> deleteMenu(String menuId) async {
-    final mId = menuId.trim();
-    if (mId.isEmpty) return;
+    _logMethodStart('deleteMenu', {
+      'menuId': menuId,
+    });
 
-    _setLoading(true);
+    final id = menuId.trim();
+    if (id.isEmpty) {
+      _log('deleteMenu skipped: empty menuId');
+      _logMethodDone('deleteMenu', {
+        'skipped': true,
+        'reason': 'empty_menu_id',
+      });
+      return;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('deleteMenu START menuId=$mId');
+      _log('deleteMenu -> service.deleteMenu("$id")');
+      final res = await service.deleteMenu(
+        businessId: businessId,
+        menuId: id,
+      );
+      _log('deleteMenu <- result=$res');
 
-      await _menuService.deleteMenu(businessId: businessId, menuId: mId);
+      session.deleteMenu(id);
+      _logSessionState('deleteMenu after session.deleteMenu');
 
-      final light = await _menuService.fetchMenusLight(businessId: businessId);
-      _menuSession.setMenusLight(light);
+      final nextId = session.activeMenuId;
+      _log('deleteMenu nextActiveMenuId=$nextId');
 
-      // Eğer aktif menüyü sildiysek, yeni bir aktif seç
-      if (_menuSession.activeMenuId == mId) {
-        final nextId = light.isNotEmpty ? light.first.id : null;
-        if (nextId == null) {
-          _menuSession.clear();
-        } else {
-          final full = await _menuService.fetchMenuFull(businessId: businessId, menuId: nextId);
-          _menuSession.setActiveMenuFull(menuId: nextId, menu: _hydrateUiCaches(full));
-        }
+      if (nextId != null && nextId.isNotEmpty) {
+        _log('deleteMenu -> fetch next active full menu');
+        final full = await service.fetchMenuFull(
+          businessId: businessId,
+          menuId: nextId,
+        );
+        _log('deleteMenu <- next full=${_menuSummary(full)}');
+        session.upsertMenu(full, select: true);
       }
 
-      _log('deleteMenu DONE');
-    } catch (e) {
+      _lastSyncAt = DateTime.now();
+
+      _logMethodDone('deleteMenu', {
+        'deletedMenuId': id,
+        'nextActiveMenuId': nextId,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('deleteMenu ERROR=$e');
+      _logMethodError('deleteMenu', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   // =========================================================
-  // CATEGORY: CREATE / UPDATE / DELETE (ANINDA)
+  // CATEGORY CRUD
   // =========================================================
   Future<void> createCategory(String name) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+    _logMethodStart('createCategory', {
+      'name': name,
+    });
+
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('createCategory skipped: activeMenuFull is null');
+      _logMethodDone('createCategory', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
 
     final n = name.trim();
-    if (n.isEmpty) return;
+    if (n.isEmpty) {
+      _log('createCategory skipped: empty name');
+      _logMethodDone('createCategory', {
+        'skipped': true,
+        'reason': 'empty_name',
+      });
+      return;
+    }
 
-    _setLoading(true);
+    _setSaving(true);
     _setError(null);
 
     try {
@@ -261,273 +459,429 @@ class MenuViewModel extends ChangeNotifier {
         products: const [],
       );
 
-      final sortOrder = menu.categories.length;
+      _log('createCategory draftCategory id=${cat.id} name="${cat.name}" sortOrder=${menu.categories.length}');
 
-      _log('createCategory START menuId=${menu.id} catId=${cat.id}');
-
-      await _menuService.upsertCategory(
+      final res = await service.upsertCategory(
         businessId: businessId,
         menuId: menu.id,
         category: cat,
-        sortOrder: sortOrder,
+        sortOrder: menu.categories.length,
       );
+      _log('createCategory <- result=$res');
 
-      final updated = menu.copyWith(categories: [...menu.categories, cat]);
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: _hydrateUiCaches(updated));
+      final updated = menu.copyWith(
+        categories: [...menu.categories, cat],
+      );
+      session.updateActiveMenu(updated);
+      _lastSyncAt = DateTime.now();
 
-      _log('createCategory DONE');
-    } catch (e) {
+      _logMethodDone('createCategory', {
+        'categoryId': cat.id,
+        'menuId': menu.id,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('createCategory ERROR=$e');
+      _logMethodError('createCategory', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   Future<void> renameCategory(CategoryModel cat, String newName) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+    _logMethodStart('renameCategory', {
+      'categoryId': cat.id,
+      'oldName': cat.name,
+      'newName': newName,
+    });
+
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('renameCategory skipped: no active menu');
+      _logMethodDone('renameCategory', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
 
     final n = newName.trim();
-    if (n.isEmpty) return;
+    if (n.isEmpty) {
+      _log('renameCategory skipped: empty newName');
+      _logMethodDone('renameCategory', {
+        'skipped': true,
+        'reason': 'empty_name',
+      });
+      return;
+    }
 
-    _setLoading(true);
+    _setSaving(true);
     _setError(null);
 
     try {
       final updatedCat = cat.copyWith(name: n);
+      final sortOrder = menu.categories.indexWhere((c) => c.id == cat.id);
 
-      _log('renameCategory START catId=${cat.id} name="$n"');
+      _log('renameCategory resolved sortOrder=$sortOrder');
 
-      await _menuService.upsertCategory(
+      final res = await service.upsertCategory(
         businessId: businessId,
         menuId: menu.id,
         category: updatedCat,
+        sortOrder: sortOrder >= 0 ? sortOrder : null,
       );
+      _log('renameCategory <- result=$res');
 
-      final updatedCats = menu.categories.map((c) => c.id == cat.id ? updatedCat : c).toList();
-      final updatedMenu = menu.copyWith(categories: updatedCats);
+      final updatedCats = menu.categories
+          .map((c) => c.id == cat.id ? updatedCat : c)
+          .toList();
 
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: _hydrateUiCaches(updatedMenu));
+      session.updateActiveMenu(menu.copyWith(categories: updatedCats));
+      _lastSyncAt = DateTime.now();
 
-      _log('renameCategory DONE');
-    } catch (e) {
+      _logMethodDone('renameCategory', {
+        'categoryId': cat.id,
+        'newName': n,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('renameCategory ERROR=$e');
+      _logMethodError('renameCategory', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   Future<void> deleteCategory(CategoryModel cat) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+    _logMethodStart('deleteCategory', {
+      'categoryId': cat.id,
+      'name': cat.name,
+    });
 
-    _setLoading(true);
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('deleteCategory skipped: no active menu');
+      _logMethodDone('deleteCategory', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('deleteCategory START catId=${cat.id}');
-
-      await _menuService.deleteCategory(
+      final res = await service.deleteCategory(
         businessId: businessId,
         menuId: menu.id,
         categoryId: cat.id,
       );
+      _log('deleteCategory <- result=$res');
 
       final updatedCats = menu.categories.where((c) => c.id != cat.id).toList();
-      final updatedMenu = menu.copyWith(categories: updatedCats);
+      session.updateActiveMenu(menu.copyWith(categories: updatedCats));
+      _lastSyncAt = DateTime.now();
 
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: _hydrateUiCaches(updatedMenu));
-
-      _log('deleteCategory DONE');
-    } catch (e) {
+      _logMethodDone('deleteCategory', {
+        'categoryId': cat.id,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('deleteCategory ERROR=$e');
+      _logMethodError('deleteCategory', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   // =========================================================
-  // PRODUCT: CREATE / UPDATE / DELETE (ANINDA)
-  // - Ürün kaydı: upsertProduct
-  // - İçerikler: setProductIngredients (replace list)
+  // PRODUCT CRUD
   // =========================================================
   Future<void> createOrUpdateProduct({
     required CategoryModel category,
     required ProductModel product,
   }) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+    _logMethodStart('createOrUpdateProduct', {
+      'categoryId': category.id,
+      'categoryName': category.name,
+      'productId': product.id,
+      'productName': product.name,
+      'ingredientCount': product.ingredients.length,
+      'optionGroupCount': product.optionGroups.length,
+    });
 
-    if (product.name.trim().isEmpty) {
-      _setError('Ürün adı boş olamaz.');
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('createOrUpdateProduct skipped: no active menu');
+      _logMethodDone('createOrUpdateProduct', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
       return;
     }
 
-    _setLoading(true);
+    final name = product.name.trim();
+    if (name.isEmpty) {
+      _setError('Ürün adı boş olamaz.');
+      _log('createOrUpdateProduct invalid: empty product name');
+      return;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('createOrUpdateProduct START productId=${product.id} catId=${category.id}');
+      final sortOrder = category.products.indexWhere((p) => p.id == product.id);
+      final resolvedSort = sortOrder >= 0 ? sortOrder : category.products.length;
 
-      // 1) image upload varsa önce url üret
-      final withImage = await _uploadPendingImageForOne(menu, productId: product.id);
+      _log('createOrUpdateProduct resolvedSort=$resolvedSort');
 
-      // product güncel halini menü içinden çek (image_url set olmuş olabilir)
-      final freshProduct = _findProductInMenu(withImage, product.id) ?? product;
-
-      // 2) product row upsert (extras dahil edebilirsin)
-      await _menuService.upsertProduct(
+      // 1) Ürün temel bilgileri
+      _log('createOrUpdateProduct -> upsertProduct');
+      final upsertRes = await service.upsertProduct(
         businessId: businessId,
         menuId: menu.id,
         categoryId: category.id,
-        product: freshProduct,
+        product: product,
+        sortOrder: resolvedSort,
       );
+      _log('createOrUpdateProduct <- upsertProduct result=$upsertRes');
 
-      // 3) ingredients replace
-      await _menuService.setProductIngredients(
+      final savedProductId = (upsertRes['product_id'] ?? product.id).toString();
+      _log('createOrUpdateProduct resolved savedProductId=$savedProductId');
+
+      final serverSafeProduct = product.copyWith(id: savedProductId);
+
+      // 2) Ingredient'ler
+      _log('createOrUpdateProduct -> setProductIngredients count=${serverSafeProduct.ingredients.length}');
+      final ingRes = await service.setProductIngredients(
         businessId: businessId,
         menuId: menu.id,
-        productId: freshProduct.id,
-        ingredients: freshProduct.ingredients,
+        productId: savedProductId,
+        ingredients: serverSafeProduct.ingredients,
       );
+      _log('createOrUpdateProduct <- setProductIngredients result=$ingRes');
 
-      // 4) local state update (category içinde replace/append)
-      final updatedMenu = _replaceOrAddProduct(menu: withImage, categoryId: category.id, product: freshProduct);
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: _hydrateUiCaches(updatedMenu));
+      // 3) Option groups
+      _log('createOrUpdateProduct -> setProductOptionGroups count=${serverSafeProduct.optionGroups.length}');
+      final optRes = await service.setProductOptionGroups(
+        businessId: businessId,
+        menuId: menu.id,
+        productId: savedProductId,
+        optionGroups: serverSafeProduct.optionGroups,
+      );
+      _log('createOrUpdateProduct <- setProductOptionGroups result=$optRes');
 
-      _log('createOrUpdateProduct DONE');
-    } catch (e) {
+      final updatedCats = menu.categories.map((c) {
+        if (c.id != category.id) return c;
+
+        final list = [...c.products];
+        final idx = list.indexWhere((p) => p.id == product.id);
+        if (idx >= 0) {
+          list[idx] = serverSafeProduct;
+        } else {
+          list.add(serverSafeProduct);
+        }
+
+        return c.copyWith(products: list);
+      }).toList();
+
+      session.updateActiveMenu(menu.copyWith(categories: updatedCats));
+      _lastSyncAt = DateTime.now();
+
+      _logMethodDone('createOrUpdateProduct', {
+        'productId': savedProductId,
+        'categoryId': category.id,
+        'ingredientCount': serverSafeProduct.ingredients.length,
+        'optionGroupCount': serverSafeProduct.optionGroups.length,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('createOrUpdateProduct ERROR=$e');
+      _logMethodError('createOrUpdateProduct', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   Future<void> deleteProduct({
     required String productId,
   }) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+    _logMethodStart('deleteProduct', {
+      'productId': productId,
+    });
 
-    final pId = productId.trim();
-    if (pId.isEmpty) return;
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('deleteProduct skipped: no active menu');
+      _logMethodDone('deleteProduct', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
 
-    _setLoading(true);
+    final id = productId.trim();
+    if (id.isEmpty) {
+      _log('deleteProduct skipped: empty productId');
+      _logMethodDone('deleteProduct', {
+        'skipped': true,
+        'reason': 'empty_product_id',
+      });
+      return;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('deleteProduct START productId=$pId');
-
-      await _menuService.deleteProduct(
+      final res = await service.deleteProduct(
         businessId: businessId,
         menuId: menu.id,
-        productId: pId,
+        productId: id,
       );
+      _log('deleteProduct <- result=$res');
 
-      final updatedCats = menu.categories.map((cat) {
-        return cat.copyWith(products: cat.products.where((p) => p.id != pId).toList());
+      final updatedCats = menu.categories.map((c) {
+        return c.copyWith(
+          products: c.products.where((p) => p.id != id).toList(),
+        );
       }).toList();
 
-      // ayrıca: başka ürünlerin extras listesinde bu productId varsa temizle
-      final cleanedCats = updatedCats.map((cat) {
-        final cleanedProds = cat.products.map((p) {
-          final nextExtras = p.extras.where((x) => x.extraProductId != pId).toList();
-          return p.copyWith(extras: nextExtras);
-        }).toList();
-        return cat.copyWith(products: cleanedProds);
-      }).toList();
+      session.updateActiveMenu(menu.copyWith(categories: updatedCats));
+      _lastSyncAt = DateTime.now();
 
-      final updatedMenu = menu.copyWith(categories: cleanedCats);
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: _hydrateUiCaches(updatedMenu));
-
-      _log('deleteProduct DONE');
-    } catch (e) {
+      _logMethodDone('deleteProduct', {
+        'productId': id,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('deleteProduct ERROR=$e');
+      _logMethodError('deleteProduct', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
-  // =========================================================
-  // INGREDIENT LIBRARY: CREATE / UPDATE / DELETE (ANINDA)
-  // =========================================================
-  Future<IngredientLibraryItem?> createOrUpdateIngredientLibraryItem(IngredientLibraryItem item) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return null;
-
-    if (item.name.trim().isEmpty) {
-      _setError('İçerik adı boş olamaz.');
+  ProductModel? findProductById(String productId) {
+    _log('findProductById START productId="$productId"');
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('findProductById no active menu');
       return null;
     }
 
-    _setLoading(true);
+    for (final c in menu.categories) {
+      for (final p in c.products) {
+        if (p.id == productId) {
+          _log('findProductById HIT category="${c.name}" product="${p.name}"');
+          return p;
+        }
+      }
+    }
+
+    _log('findProductById MISS productId="$productId"');
+    return null;
+  }
+
+  // =========================================================
+  // INGREDIENT LIBRARY
+  // =========================================================
+  Future<IngredientLibraryItem?> createOrUpdateIngredientLibraryItem(
+      IngredientLibraryItem item,
+      ) async {
+    _logMethodStart('createOrUpdateIngredientLibraryItem', {
+      'itemId': item.id,
+      'name': item.name,
+      'unit': item.unit.name,
+    });
+
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('createOrUpdateIngredientLibraryItem skipped: no active menu');
+      _logMethodDone('createOrUpdateIngredientLibraryItem', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return null;
+    }
+
+    if (item.name.trim().isEmpty) {
+      _setError('İçerik adı boş olamaz.');
+      _log('createOrUpdateIngredientLibraryItem invalid: empty name');
+      return null;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('createOrUpdateIngredientLibraryItem START itemId=${item.id} name="${item.name}"');
-
-      final resp = await _menuService.upsertIngredientLibraryItem(
+      final res = await service.upsertIngredientLibraryItem(
         businessId: businessId,
         item: item,
       );
-
-      // server item_id döndürüyorsa onu al (client uuid kullanıyorsan aynı olur)
-      final serverId = (resp['item_id'] ?? item.id).toString();
-
-      final normalized = item.id == serverId ? item : item.copyWith(id: serverId);
+      _log('createOrUpdateIngredientLibraryItem <- result=$res');
 
       final list = [...menu.ingredientLibrary];
-      final idx = list.indexWhere((x) => x.id == item.id || x.id == serverId);
+      final idx = list.indexWhere((x) => x.id == item.id);
       if (idx >= 0) {
-        list[idx] = normalized;
+        list[idx] = item;
       } else {
-        list.add(normalized);
+        list.add(item);
       }
 
-      final updatedMenu = menu.copyWith(ingredientLibrary: list);
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: _hydrateUiCaches(updatedMenu));
+      session.updateActiveMenu(menu.copyWith(ingredientLibrary: list));
+      _lastSyncAt = DateTime.now();
 
-      _log('createOrUpdateIngredientLibraryItem DONE');
-      return normalized;
-    } catch (e) {
+      _logMethodDone('createOrUpdateIngredientLibraryItem', {
+        'itemId': item.id,
+      });
+      return item;
+    } catch (e, st) {
       _setError(e.toString());
-      _log('createOrUpdateIngredientLibraryItem ERROR=$e');
+      _logMethodError('createOrUpdateIngredientLibraryItem', e, st);
       return null;
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   Future<void> deleteIngredientLibraryItem(String itemId) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+    _logMethodStart('deleteIngredientLibraryItem', {
+      'itemId': itemId,
+    });
+
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('deleteIngredientLibraryItem skipped: no active menu');
+      _logMethodDone('deleteIngredientLibraryItem', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
 
     final id = itemId.trim();
-    if (id.isEmpty) return;
+    if (id.isEmpty) {
+      _log('deleteIngredientLibraryItem skipped: empty itemId');
+      _logMethodDone('deleteIngredientLibraryItem', {
+        'skipped': true,
+        'reason': 'empty_item_id',
+      });
+      return;
+    }
 
-    _setLoading(true);
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('deleteIngredientLibraryItem START itemId=$id');
-
-      await _menuService.deleteIngredientLibraryItem(
+      final res = await service.deleteIngredientLibraryItem(
         businessId: businessId,
         itemId: id,
       );
+      _log('deleteIngredientLibraryItem <- result=$res');
 
-      // local: library’den kaldır
-      var updatedMenu = menu.copyWith(
+      var updated = menu.copyWith(
         ingredientLibrary: menu.ingredientLibrary.where((x) => x.id != id).toList(),
       );
 
-      // local: product_ingredients içinden de temizle (UI tutarlılık)
-      final updatedCats = updatedMenu.categories.map((cat) {
+      final updatedCats = updated.categories.map((cat) {
         final updatedProds = cat.products.map((p) {
           final nextRefs = p.ingredients.where((r) => r.ingredientId != id).toList();
           return p.copyWith(ingredients: nextRefs);
@@ -535,37 +889,53 @@ class MenuViewModel extends ChangeNotifier {
         return cat.copyWith(products: updatedProds);
       }).toList();
 
-      updatedMenu = updatedMenu.copyWith(categories: updatedCats);
+      updated = updated.copyWith(categories: updatedCats);
 
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: _hydrateUiCaches(updatedMenu));
+      session.updateActiveMenu(updated);
+      _lastSyncAt = DateTime.now();
 
-      _log('deleteIngredientLibraryItem DONE');
-    } catch (e) {
+      _logMethodDone('deleteIngredientLibraryItem', {
+        'itemId': id,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('deleteIngredientLibraryItem ERROR=$e');
+      _logMethodError('deleteIngredientLibraryItem', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   // =========================================================
-  // COMBO / EVENT: ANINDA SAVE / DELETE
+  // COMBO
   // =========================================================
   Future<void> saveCombo(ComboDraft combo) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+    _logMethodStart('saveCombo', {
+      'comboId': combo.id,
+      'name': combo.name,
+      'itemCount': combo.items.length,
+      'priceMode': combo.priceMode.name,
+    });
 
-    _setLoading(true);
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('saveCombo skipped: no active menu');
+      _logMethodDone('saveCombo', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('saveCombo START menuId=${menu.id} comboId=${combo.id}');
-
-      await _menuService.upsertCombo(
+      final res = await service.upsertCombo(
         businessId: businessId,
         menuId: menu.id,
         combo: combo,
       );
+      _log('saveCombo <- result=$res');
 
       final list = [...menu.combos];
       final idx = list.indexWhere((x) => x.id == combo.id);
@@ -575,62 +945,96 @@ class MenuViewModel extends ChangeNotifier {
         list.add(combo);
       }
 
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: menu.copyWith(combos: list));
-      notifyListeners();
+      session.updateActiveMenu(menu.copyWith(combos: list));
+      _lastSyncAt = DateTime.now();
 
-      _log('saveCombo DONE');
-    } catch (e) {
+      _logMethodDone('saveCombo', {
+        'comboId': combo.id,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('saveCombo ERROR=$e');
+      _logMethodError('saveCombo', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
-  Future<void> deleteComboRemote(String comboId) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+  Future<void> deleteComboLocal(String comboId) async {
+    _logMethodStart('deleteComboLocal', {
+      'comboId': comboId,
+    });
 
-    _setLoading(true);
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('deleteComboLocal skipped: no active menu');
+      _logMethodDone('deleteComboLocal', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('deleteComboRemote START comboId=$comboId');
-
-      await _menuService.deleteCombo(
+      final res = await service.deleteCombo(
         businessId: businessId,
         menuId: menu.id,
         comboId: comboId,
       );
+      _log('deleteComboLocal <- result=$res');
 
-      final updated = menu.copyWith(combos: menu.combos.where((c) => c.id != comboId).toList());
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: updated);
-      notifyListeners();
+      session.updateActiveMenu(
+        menu.copyWith(
+          combos: menu.combos.where((c) => c.id != comboId).toList(),
+        ),
+      );
 
-      _log('deleteComboRemote DONE');
-    } catch (e) {
+      _lastSyncAt = DateTime.now();
+
+      _logMethodDone('deleteComboLocal', {
+        'comboId': comboId,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('deleteComboRemote ERROR=$e');
+      _logMethodError('deleteComboLocal', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
+  // =========================================================
+  // EVENT
+  // =========================================================
   Future<void> saveEvent(EventDraft event) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+    _logMethodStart('saveEvent', {
+      'eventId': event.id,
+      'name': event.name,
+      'scheduleType': event.scheduleType.name,
+      'productCount': event.productIds.length,
+    });
 
-    _setLoading(true);
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('saveEvent skipped: no active menu');
+      _logMethodDone('saveEvent', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('saveEvent START eventId=${event.id}');
-
-      await _menuService.upsertEvent(
+      final res = await service.upsertEvent(
         businessId: businessId,
         menuId: menu.id,
         event: event,
       );
+      _log('saveEvent <- result=$res');
 
       final list = [...menu.events];
       final idx = list.indexWhere((x) => x.id == event.id);
@@ -640,339 +1044,88 @@ class MenuViewModel extends ChangeNotifier {
         list.add(event);
       }
 
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: menu.copyWith(events: list));
-      notifyListeners();
+      session.updateActiveMenu(menu.copyWith(events: list));
+      _lastSyncAt = DateTime.now();
 
-      _log('saveEvent DONE');
-    } catch (e) {
+      _logMethodDone('saveEvent', {
+        'eventId': event.id,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('saveEvent ERROR=$e');
+      _logMethodError('saveEvent', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
-  Future<void> deleteEventRemote(String eventId) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
+  Future<void> deleteEventLocal(String eventId) async {
+    _logMethodStart('deleteEventLocal', {
+      'eventId': eventId,
+    });
 
-    _setLoading(true);
+    final menu = session.activeMenuFull;
+    if (menu == null) {
+      _log('deleteEventLocal skipped: no active menu');
+      _logMethodDone('deleteEventLocal', {
+        'skipped': true,
+        'reason': 'no_active_menu',
+      });
+      return;
+    }
+
+    _setSaving(true);
     _setError(null);
 
     try {
-      _log('deleteEventRemote START eventId=$eventId');
-
-      await _menuService.deleteEvent(
+      final res = await service.deleteEvent(
         businessId: businessId,
         menuId: menu.id,
         eventId: eventId,
       );
+      _log('deleteEventLocal <- result=$res');
 
-      final updated = menu.copyWith(events: menu.events.where((e) => e.id != eventId).toList());
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: updated);
-      notifyListeners();
+      session.updateActiveMenu(
+        menu.copyWith(
+          events: menu.events.where((e) => e.id != eventId).toList(),
+        ),
+      );
 
-      _log('deleteEventRemote DONE');
-    } catch (e) {
+      _lastSyncAt = DateTime.now();
+
+      _logMethodDone('deleteEventLocal', {
+        'eventId': eventId,
+      });
+    } catch (e, st) {
       _setError(e.toString());
-      _log('deleteEventRemote ERROR=$e');
+      _logMethodError('deleteEventLocal', e, st);
     } finally {
-      _setLoading(false);
+      _setSaving(false);
     }
   }
 
   // =========================================================
-  // EXTRAS: Local + Remote (ANINDA)
+  // STATE HELPERS
   // =========================================================
-
-  ProductModel? findProductById(String productId) {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return null;
-
-    for (final c in menu.categories) {
-      for (final p in c.products) {
-        if (p.id == productId) return p;
-      }
-    }
-    return null;
-  }
-
-  List<ProductModel> getResolvedExtras(String productId) {
-    final p = findProductById(productId);
-    if (p == null) return const [];
-    final out = <ProductModel>[];
-    for (final r in p.extras) {
-      final resolved = r.extraProduct ?? findProductById(r.extraProductId);
-      if (resolved != null) out.add(resolved);
-    }
-    return out;
-  }
-
-  Future<void> addExtraToProduct({
-    required String productId,
-    required String extraProductId,
-    int maxQty = 1,
-    int sort = 0,
-  }) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
-
-    if (productId == extraProductId) {
-      _setError('Bir ürün kendisini ekstra olarak alamaz.');
-      return;
-    }
-
-    // döngü guard (basit)
-    final extraProd = findProductById(extraProductId);
-    if (extraProd != null && extraProd.extras.any((x) => x.extraProductId == productId)) {
-      _setError('Döngü oluşuyor: ekstra ürün, zaten seni ekstra olarak içeriyor.');
-      return;
-    }
-
-    final target = findProductById(productId);
-    if (target == null) return;
-
-    final exists = target.extras.any((x) => x.extraProductId == extraProductId);
-    if (exists) return;
-
-    final ref = ProductExtraRef(
-      extraProductId: extraProductId,
-      maxQty: maxQty < 1 ? 1 : maxQty,
-      sort: sort,
-      extraProduct: extraProd,
-    );
-
-    final updatedProduct = target.copyWith(
-      extras: [...target.extras, ref]..sort((a, b) => a.sort.compareTo(b.sort)),
-    );
-
-    // ✅ anında sunucuya yaz: product upsert (backend extras yazmayı desteklemeli)
-    await _persistProductById(menu: menu, product: updatedProduct);
-  }
-
-  Future<void> removeExtraFromProduct({
-    required String productId,
-    required String extraProductId,
-  }) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
-
-    final target = findProductById(productId);
-    if (target == null) return;
-
-    final updatedProduct = target.copyWith(
-      extras: target.extras.where((x) => x.extraProductId != extraProductId).toList(),
-    );
-
-    await _persistProductById(menu: menu, product: updatedProduct);
-  }
-
-  Future<void> updateExtraMaxQty({
-    required String productId,
-    required String extraProductId,
-    required int maxQty,
-  }) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
-
-    final target = findProductById(productId);
-    if (target == null) return;
-
-    final safeQty = maxQty < 1 ? 1 : maxQty;
-
-    final updatedProduct = target.copyWith(
-      extras: target.extras.map((x) {
-        if (x.extraProductId != extraProductId) return x;
-        return x.copyWith(maxQty: safeQty);
-      }).toList(),
-    );
-
-    await _persistProductById(menu: menu, product: updatedProduct);
-  }
-
-  Future<void> updateExtraSort({
-    required String productId,
-    required String extraProductId,
-    required int sort,
-  }) async {
-    final menu = _menuSession.activeMenuFull;
-    if (menu == null) return;
-
-    final target = findProductById(productId);
-    if (target == null) return;
-
-    final updatedExtras = target.extras.map((x) {
-      if (x.extraProductId != extraProductId) return x;
-      return x.copyWith(sort: sort);
-    }).toList()
-      ..sort((a, b) => a.sort.compareTo(b.sort));
-
-    final updatedProduct = target.copyWith(extras: updatedExtras);
-
-    await _persistProductById(menu: menu, product: updatedProduct);
-  }
-
-  // =========================================================
-  // INTERNAL: persist one product (find its category, upsert product + ingredients)
-  // =========================================================
-  Future<void> _persistProductById({
-    required MenuModel menu,
-    required ProductModel product,
-  }) async {
-    // category resolve
-    CategoryModel? cat;
-    for (final c in menu.categories) {
-      if (c.products.any((p) => p.id == product.id)) {
-        cat = c;
-        break;
-      }
-    }
-    if (cat == null) {
-      _setError('Ürün kategorisi bulunamadı.');
-      return;
-    }
-
-    _setLoading(true);
+  void clearError() {
+    _log('clearError oldError=$_error');
     _setError(null);
-
-    try {
-      _log('_persistProductById START productId=${product.id}');
-
-      await _menuService.upsertProduct(
-        businessId: businessId,
-        menuId: menu.id,
-        categoryId: cat.id,
-        product: product,
-      );
-
-      await _menuService.setProductIngredients(
-        businessId: businessId,
-        menuId: menu.id,
-        productId: product.id,
-        ingredients: product.ingredients,
-      );
-
-      final updatedMenu = _replaceOrAddProduct(menu: menu, categoryId: cat.id, product: product);
-      _menuSession.setActiveMenuFull(menuId: menu.id, menu: _hydrateUiCaches(updatedMenu));
-
-      _log('_persistProductById DONE');
-    } catch (e) {
-      _setError(e.toString());
-      _log('_persistProductById ERROR=$e');
-    } finally {
-      _setLoading(false);
-    }
   }
 
-  // =========================================================
-  // UI CACHE hydrate
-  // =========================================================
-  MenuModel _hydrateUiCaches(MenuModel menu) {
-    final libById = <String, IngredientLibraryItem>{
-      for (final x in menu.ingredientLibrary) x.id: x,
-    };
-
-    final prodById = <String, ProductModel>{};
-    for (final c in menu.categories) {
-      for (final p in c.products) {
-        prodById[p.id] = p;
-      }
-    }
-
-    final hydratedCats = menu.categories.map((cat) {
-      final hydratedProds = cat.products.map((p) {
-        final ingRefs = p.ingredients.map((r) {
-          final ing = libById[r.ingredientId];
-          if (ing == null) return r;
-          return r.copyWith(ingredient: ing, setIngredient: true);
-        }).toList();
-
-        final exRefs = p.extras.map((x) {
-          final ep = prodById[x.extraProductId];
-          if (ep == null) return x;
-          return x.copyWith(extraProduct: ep, setExtraProduct: true);
-        }).toList();
-
-        return p.copyWith(ingredients: ingRefs, extras: exRefs);
-      }).toList();
-
-      return cat.copyWith(products: hydratedProds);
-    }).toList();
-
-    return menu.copyWith(categories: hydratedCats);
-  }
-
-  // =========================================================
-  // IMAGE upload helpers
-  // =========================================================
-  Future<MenuModel> _uploadPendingImageForOne(MenuModel menu, {required String productId}) async {
-    // Bu yardımcı sadece tek ürünün imagePath’i varsa upload eder.
-    // (Ürün edit sheet içinde hızlı “kaydet” için ideal)
-    final outCats = <CategoryModel>[];
-    var changed = false;
-
-    for (final cat in menu.categories) {
-      final outProds = <ProductModel>[];
-      for (final p in cat.products) {
-        if (p.id == productId && p.imagePath != null && p.imagePath!.trim().isNotEmpty) {
-          final url = await _menuService.uploadProductImage(
-            businessId: businessId,
-            menuId: menu.id,
-            productId: p.id,
-            localPath: p.imagePath!,
-          );
-          outProds.add(p.copyWith(imageUrl: url, setImageUrl: true));
-          changed = true;
-        } else {
-          outProds.add(p);
-        }
-      }
-      outCats.add(cat.copyWith(products: outProds));
-    }
-
-    return changed ? menu.copyWith(categories: outCats) : menu;
-  }
-
-  ProductModel? _findProductInMenu(MenuModel menu, String productId) {
-    for (final c in menu.categories) {
-      for (final p in c.products) {
-        if (p.id == productId) return p;
-      }
-    }
-    return null;
-  }
-
-  MenuModel _replaceOrAddProduct({
-    required MenuModel menu,
-    required String categoryId,
-    required ProductModel product,
-  }) {
-    final updatedCats = menu.categories.map((cat) {
-      if (cat.id != categoryId) return cat;
-
-      final list = [...cat.products];
-      final idx = list.indexWhere((x) => x.id == product.id);
-      if (idx >= 0) {
-        list[idx] = product;
-      } else {
-        list.add(product);
-      }
-      return cat.copyWith(products: list);
-    }).toList();
-
-    return menu.copyWith(categories: updatedCats);
-  }
-
-  // =========================================================
-  // Setters
-  // =========================================================
-  void _setLoading(bool v) {
-    _isLoading = v;
+  void _setLoading(bool value) {
+    _isLoading = value;
+    _log('_setLoading -> $value');
     notifyListeners();
   }
 
-  void _setError(String? v) {
-    _error = v;
+  void _setSaving(bool value) {
+    _isSaving = value;
+    _log('_setSaving -> $value');
+    notifyListeners();
+  }
+
+  void _setError(String? value) {
+    _error = value;
+    _log('_setError -> $value');
     notifyListeners();
   }
 }

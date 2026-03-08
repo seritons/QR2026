@@ -1,22 +1,7 @@
-// lib/services/menu_service.dart
-//
-// ✅ Yeni mimari: 1 kez full çek -> sonra her şeyi “tek tek” RPC ile anında yaz.
-// - Menu/Category/Product/Ingredient/Combo/Event ayrı ayrı kaydolur.
-// - Büyük “menu tree” payload’ı göndermiyoruz (gereksiz maliyet + risk).
-//
-// ✅ İstediğin değişiklikler:
-// 1) Create/Update ayrımı yok -> her şey UPSERT
-// 2) RPC isimlerinden "menu_" prefix’i kaldırıldı:
-//    upsert_menu, delete_menu, upsert_category, delete_category, upsert_product, delete_product, ...
-//
-// Not: SQL’de RPC isimlerini de birebir bunlara göre rename etmelisin.
-
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../features/panel/menu/menu_models.dart';
 
 class MenuService {
@@ -48,6 +33,7 @@ class MenuService {
       'upsert_ingredient_library_item'; // (p_business_id, p_item)
   static const String rpcDeleteIngredientLibraryItem =
       'delete_ingredient_library_item'; // (p_business_id, p_item_id)
+  static const String rpcSetProductOptionGroups = 'set_product_option_groups';
 
   // Product -> ingredients replace (tek hamlede listeyi set et)
   static const String rpcSetProductIngredients =
@@ -515,6 +501,44 @@ class MenuService {
     if (!ok) throw Exception((json['reason'] ?? 'delete_event_failed').toString());
 
     _log('deleteEvent DONE ok=$ok');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> setProductOptionGroups({
+    required String businessId,
+    required String menuId,
+    required String productId,
+    required List<ProductOptionGroup> optionGroups,
+  }) async {
+    final bId = businessId.trim();
+    final mId = menuId.trim();
+    final pId = productId.trim();
+
+    final pGroups = optionGroups.map((g) => g.toJson()).toList();
+
+    _log(
+      'setProductOptionGroups START '
+          'businessId="$bId" menuId="$mId" productId="$pId" count=${pGroups.length}',
+    );
+
+    final res = await _sb.rpc(rpcSetProductOptionGroups, params: {
+      'p_business_id': bId,
+      'p_menu_id': mId,
+      'p_product_id': pId,
+      'p_option_groups': pGroups,
+    });
+
+    _log('setProductOptionGroups RAW res=${clipJson(res)}');
+
+    final json = (res as Map).cast<String, dynamic>();
+    final ok = json['ok'] == true;
+    if (!ok) {
+      throw Exception(
+        (json['reason'] ?? 'set_product_option_groups_failed').toString(),
+      );
+    }
+
+    _log('setProductOptionGroups DONE ok=$ok');
     return json;
   }
 
