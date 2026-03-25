@@ -1,5 +1,6 @@
 // lib/app/app_services.dart
 import 'package:qrpanel/services/boot_service.dart';
+import 'package:qrpanel/services/order_service.dart';
 import 'package:qrpanel/services/user_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -15,6 +16,7 @@ class AppServices {
   late final MenuService menu;
   late final BootService boot;
   late final UserService user;
+  late final OrderService order;
 
   AppServices(this.sb) {
     auth = AuthService(sb);
@@ -22,5 +24,6 @@ class AppServices {
     business = BusinessService(sb);
     menu = MenuService(sb);
     boot = BootService(sb);
+    order = OrderService(sb);
   }
 }

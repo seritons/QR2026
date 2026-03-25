@@ -174,6 +174,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
     ],
   );
 
+
   LinearGradient appetiteGradient() => LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
